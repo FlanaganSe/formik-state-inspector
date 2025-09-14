@@ -1,167 +1,109 @@
+// Minimal Formik Inspector background (flat style, MV3-safe)
+
+const tabs = new Map(); // Map<tabId, { forms: any[], content?: Port, popup?: Port }>
+
 chrome.runtime.onInstalled.addListener(() => {
-  console.log('[Formik Inspector] Extension installed');
+  console.log("[Formik Inspector] Installed");
 });
 
-// Store current forms data per tab
-const tabForms = new Map();
-const tabPorts = new Map();
-const popupPorts = new Map();
+/* ------------------------------ tiny helpers ------------------------------ */
 
-// Handle connections from content scripts and popups
-chrome.runtime.onConnect.addListener((port) => {
-  if (port.name === 'formik-inspector') {
-    // Content script connection
-    const tabId = port.sender?.tab?.id;
-    if (tabId) {
-      tabPorts.set(tabId, port);
-      
-      port.onMessage.addListener((message) => {
-        switch (message.type) {
-          case 'forms-update':
-            handleFormsUpdate(tabId, message.forms);
-            break;
-          case 'badge-update':
-            handleBadgeUpdate(tabId, message.count);
-            break;
-          case 'current-forms': {
-            // Forward current forms to popup if connected
-            const popupPort = popupPorts.get(tabId);
-            if (popupPort) {
-              try {
-                popupPort.postMessage({
-                  type: 'forms-data',
-                  forms: message.forms,
-                  timestamp: message.timestamp
-                });
-              } catch (error) {
-                console.warn('[Formik Inspector] Error forwarding to popup:', error);
-              }
-            }
-            break;
-          }
-        }
-      });
+const S = (tabId) => tabs.get(tabId) ?? (tabs.set(tabId, { forms: [], content: undefined, popup: undefined }), tabs.get(tabId));
 
-      port.onDisconnect.addListener(() => {
-        tabPorts.delete(tabId);
-        tabForms.delete(tabId);
-        updateBadge(tabId, 0);
-      });
-    }
-  } else if (port.name === 'popup') {
-    // Popup connection
-    getCurrentTab().then(tab => {
-      if (tab?.id) {
-        popupPorts.set(tab.id, port);
-        
-        port.onMessage.addListener((message) => {
-          switch (message.type) {
-            case 'get-forms':
-              handlePopupGetForms(tab.id, port);
-              break;
-            case 'refresh':
-              handlePopupRefresh(tab.id);
-              break;
-          }
-        });
+const post = (port, msg, onFail) => {
+  if (!port) return;
+  try { port.postMessage(msg); } catch { onFail && onFail(); }
+};
 
-        port.onDisconnect.addListener(() => {
-          popupPorts.delete(tab.id);
-        });
+const badge = (tabId, n) => {
+  chrome.action.setBadgeText({ tabId, text: n > 0 ? String(n) : "" });
+  chrome.action.setBadgeBackgroundColor({ tabId, color: n > 0 ? "#007bff" : "#6c757d" });
+};
 
-        // Send initial data
-        handlePopupGetForms(tab.id, port);
-      }
-    });
-  }
-});
-
-function handleFormsUpdate(tabId, forms) {
-  tabForms.set(tabId, forms);
-  
-  // Forward to popup if connected
-  const popupPort = popupPorts.get(tabId);
-  if (popupPort) {
-    try {
-      popupPort.postMessage({
-        type: 'forms-data',
-        forms: forms,
-        timestamp: Date.now()
-      });
-    } catch (error) {
-      console.warn('[Formik Inspector] Error forwarding to popup:', error);
-      popupPorts.delete(tabId);
-    }
-  }
-}
-
-function handleBadgeUpdate(tabId, count) {
-  updateBadge(tabId, count);
-}
-
-function handlePopupGetForms(tabId, port) {
-  const forms = tabForms.get(tabId) || [];
-  
-  try {
-    port.postMessage({
-      type: 'forms-data',
-      forms: forms,
-      timestamp: Date.now()
-    });
-  } catch (error) {
-    console.warn('[Formik Inspector] Error sending forms to popup:', error);
-  }
-
-  // Also request fresh data from content script
-  const contentPort = tabPorts.get(tabId);
-  if (contentPort) {
-    try {
-      contentPort.postMessage({ type: 'get-current-forms' });
-    } catch (error) {
-      console.warn('[Formik Inspector] Error requesting forms from content:', error);
-    }
-  }
-}
-
-function handlePopupRefresh(tabId) {
-  const contentPort = tabPorts.get(tabId);
-  if (contentPort) {
-    try {
-      contentPort.postMessage({ type: 'refresh-request' });
-    } catch (error) {
-      console.warn('[Formik Inspector] Error sending refresh request:', error);
-    }
-  }
-}
-
-function updateBadge(tabId, count) {
-  const text = count > 0 ? count.toString() : '';
-  const color = count > 0 ? '#007bff' : '#6c757d';
-  
-  chrome.action.setBadgeText({
-    text: text,
-    tabId: tabId
-  });
-
-  chrome.action.setBadgeBackgroundColor({
-    color: color,
-    tabId: tabId
-  });
-}
-
-async function getCurrentTab() {
+const activeTabId = async () => {
   try {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-    return tab;
-  } catch (error) {
-    console.warn('[Formik Inspector] Error getting current tab:', error);
-    return null;
-  }
-}
+    return tab?.id ?? null;
+  } catch { return null; }
+};
 
-// Clean up when tabs are closed
-chrome.tabs.onRemoved.addListener((tabId) => {
-  tabForms.delete(tabId);
-  tabPorts.delete(tabId);
-  popupPorts.delete(tabId);
+const cleanup = (tabId) => {
+  const s = tabs.get(tabId);
+  if (!s) return;
+  try { s.content?.disconnect?.(); } catch {}
+  try { s.popup?.disconnect?.(); } catch {}
+  tabs.delete(tabId);
+  badge(tabId, 0);
+};
+
+/* ------------------------------- content side ------------------------------ */
+
+const onContentMessage = (tabId, s) => (m) => {
+  const handlers = {
+    "forms-update": () => {
+      s.forms = Array.isArray(m.forms) ? m.forms : [];
+      post(s.popup, { type: "forms-data", forms: s.forms, timestamp: Date.now() }, () => { s.popup = undefined; });
+    },
+    "badge-update": () => badge(tabId, Number(m.count) || 0),
+    "current-forms": () => {
+      const forms = Array.isArray(m.forms) ? m.forms : [];
+      s.forms = forms;
+      post(s.popup, { type: "forms-data", forms, timestamp: m.timestamp ?? Date.now() }, () => { s.popup = undefined; });
+    },
+  };
+  (handlers[m?.type] ?? (() => {}))();
+};
+
+const connectContent = (port) => {
+  const tabId = port.sender?.tab?.id;
+  if (!tabId) return;
+  const s = S(tabId);
+  s.content = port;
+  port.onMessage.addListener(onContentMessage(tabId, s));
+  port.onDisconnect.addListener(() => {
+    if (S(tabId).content === port) S(tabId).content = undefined;
+    S(tabId).forms = [];
+    badge(tabId, 0);
+  });
+};
+
+/* -------------------------------- popup side ------------------------------- */
+
+const onPopupMessage = (tabId, s, port) => (m) => {
+  const handlers = {
+    "get-forms": () => {
+      post(port, { type: "forms-data", forms: s.forms, timestamp: Date.now() });
+      post(s.content, { type: "get-current-forms" }, () => { s.content = undefined; });
+    },
+    "refresh": () => {
+      post(s.content, { type: "refresh-request" }, () => { s.content = undefined; });
+    },
+  };
+  (handlers[m?.type] ?? (() => {}))();
+};
+
+const connectPopup = async (port) => {
+  const tabId = await activeTabId();
+  if (!tabId) return;
+  const s = S(tabId);
+  s.popup = port;
+
+  // send cache immediately, then ask content for fresh snapshot
+  post(port, { type: "forms-data", forms: s.forms, timestamp: Date.now() });
+  post(s.content, { type: "get-current-forms" }, () => { s.content = undefined; });
+
+  port.onMessage.addListener(onPopupMessage(tabId, s, port));
+  port.onDisconnect.addListener(() => {
+    if (S(tabId).popup === port) S(tabId).popup = undefined;
+  });
+};
+
+/* --------------------------- connections & cleanup -------------------------- */
+
+chrome.runtime.onConnect.addListener((port) => {
+  if (port.name === "formik-inspector") return connectContent(port);
+  if (port.name === "popup") return void connectPopup(port);
+  // unknown ports ignored (forward-compat)
 });
+
+chrome.tabs.onRemoved.addListener(cleanup);

@@ -1,229 +1,134 @@
 (() => {
-	// Prevent double-injection (content scripts can run more than once)
-	if (window.__FORMIK_INSPECTOR_ACTIVE__) return;
-	window.__FORMIK_INSPECTOR_ACTIVE__ = true;
+  // 1. Initial guards
+  if (window.__FORMIK_INSPECTOR_ACTIVE__) return;
+  const HOOK = window.__REACT_DEVTOOLS_GLOBAL_HOOK__;
+  if (!HOOK) return;
+  
+  /**
+   * Identifies a Formik instance by checking for its distinct name or shape.
+   * This heuristic is designed to be concise and version-agnostic.
+   */
+  function getFormikBag(fiber) {
+    const bag = fiber?.memoizedProps?.value;
+    // A valid bag is an object with a `values` property.
+    if (!bag || typeof bag !== 'object' || !('values' in bag)) {
+      return null;
+    }
+    
+    // Check for Formik's signature: a telling name or the right combination of properties.
+    const type = fiber?.type;
+    const hasFormikName = /Formik/i.test(type?.name || type?._context?.displayName || '');
+    const hasFormikShape = 'errors' in bag && 'touched' in bag && 'isSubmitting' in bag;
 
-	const HOOK = window.__REACT_DEVTOOLS_GLOBAL_HOOK__;
-	if (!HOOK) {
-		console.warn(
-			"[Formik Inspector] React DevTools hook not found; no inspection.",
-		);
-		return;
-	}
+    return (hasFormikName || hasFormikShape) ? bag : null;
+  }
+  
+  /**
+   * The main controller that finds, formats, and posts Formik state.
+   */
+  class FormikInspector {
+    lastFormCount = 0;
+    debounceTimer = null;
 
-	// Toggle for local debugging
-	const DEBUG = false;
-	const log = (...a) => DEBUG && console.log("[Formik Inspector]", ...a);
+    constructor() {
+      window.__FORMIK_INSPECTOR_ACTIVE__ = true;
+      this.attachListeners();
+      setTimeout(() => this.scan(), 400); // Initial scan
+      console.log("[Formik Inspector] Ready.");
+    }
 
-	let lastCount = 0;
-	let debounceId;
+    /** Attaches listeners to trigger scans. */
+    attachListeners() {
+      // Primary Trigger: React's own commit hook is the most efficient source of updates.
+      const originalCommit = HOOK.onCommitFiberRoot;
+      HOOK.onCommitFiberRoot = (...args) => {
+        try {
+          return originalCommit.apply(null, args);
+        } finally {
+          this.scheduleScan();
+        }
+      };
 
-	// ---- Small, clear helpers -------------------------------------------------
+      // Manual Trigger: Allows the extension UI to request a refresh.
+      window.addEventListener("message", (event) => {
+        if (event.data?.source === "formik-inspector" && event.data.type === "refresh-request") {
+          this.scan();
+        }
+      });
+    }
 
-	const isObj = (x) => x != null && typeof x === "object";
+    /** Finds all Formik instances on the page. */
+    findForms() {
+      const forms = [];
+      const roots = new Set();
+      const seenFibers = new WeakSet();
 
-	// Heuristic: tolerate Formik versions by checking context *or* bag shape
-	function getFormikBagFromFiber(fiber) {
-		const props = fiber?.memoizedProps;
-		const bag = props?.value;
-		const type = fiber?.type;
-		const ctx = type?._context;
-		const typeName = type?.name || "";
+      // Get all unique React root fibers from the hook.
+      HOOK.renderers?.forEach((_, rendererId) => {
+        HOOK.getFiberRoots(rendererId)?.forEach(root => roots.add(root?.current));
+      });
 
-		// If it's a context provider named like Formik, trust it.
-		const ctxLooksFormik =
-			!!ctx && /Formik/i.test(ctx.displayName || ctx._displayName || "");
+      // Perform a breadth-first search on each root to find Formik bags.
+      for (const root of roots) {
+        const queue = [root];
+        while (queue.length > 0) {
+          const fiber = queue.shift();
+          if (!fiber || seenFibers.has(fiber)) continue;
+          seenFibers.add(fiber);
+          
+          const bag = getFormikBag(fiber);
+          if (bag) forms.push(bag);
 
-		// If component name hints at Formik, prefer it too.
-		const typeLooksFormik = /Formik|FormikContext/i.test(typeName || "");
+          if (fiber.child) queue.push(fiber.child);
+          if (fiber.sibling) queue.push(fiber.sibling);
+        }
+      }
+      return forms;
+    }
 
-		// Generic “Formik bag” shape (loose on purpose for version drift)
-		const looksLikeBag =
-			isObj(bag) &&
-			isObj(bag.values) &&
-			isObj(bag.errors) &&
-			isObj(bag.touched) &&
-			// common methods, optional: tolerate undefined to span versions
-			(bag.handleSubmit === undefined ||
-				typeof bag.handleSubmit === "function") &&
-			(bag.handleChange === undefined ||
-				typeof bag.handleChange === "function");
+    /** Posts data to the extension. */
+    post(forms) {
+      const serializableForms = forms.map((bag, index) => ({
+        id: `formik-${index}`,
+        values: bag.values ?? {},
+        errors: bag.errors ?? {},
+        touched: bag.touched ?? {},
+        isSubmitting: bag.isSubmitting ?? false,
+        isValidating: bag.isValidating ?? false,
+        isValid: bag.isValid ?? true,
+        dirty: bag.dirty ?? false,
+        submitCount: bag.submitCount ?? 0,
+        status: bag.status,
+        initialValues: bag.initialValues ?? {},
+      }));
 
-		return (ctxLooksFormik || typeLooksFormik || looksLikeBag) && isObj(bag)
-			? bag
-			: null;
-	}
+      window.postMessage({ source: "formik-inspector", type: "forms-update", forms: serializableForms }, "*");
 
-	function toFormData(bag, idx) {
-		// Only pluck safe, serializable fields; default generously
-		return {
-			id: `form-${idx}`,
-			values: bag.values ?? {},
-			errors: bag.errors ?? {},
-			touched: bag.touched ?? {},
-			isSubmitting: !!bag.isSubmitting,
-			isValidating: !!bag.isValidating,
-			isValid: bag.isValid ?? true,
-			submitCount: bag.submitCount ?? 0,
-			dirty: !!bag.dirty,
-			status: bag.status,
-			initialValues: bag.initialValues ?? {},
-		};
-	}
+      if (serializableForms.length !== this.lastFormCount) {
+        this.lastFormCount = serializableForms.length;
+        window.postMessage({ source: "formik-inspector", type: "badge-update", count: this.lastFormCount }, "*");
+      }
+    }
 
-	// Breadth-first walk keeps stack tiny; WeakSet avoids revisits
-	function traverseFiber(root, visit) {
-		if (!root) return;
-		const seen = new WeakSet();
-		const q = [root];
-		while (q.length) {
-			const f = q.shift();
-			if (!f || seen.has(f)) continue;
-			seen.add(f);
+    /** The main method to trigger a scan and post the results. */
+    scan() {
+      try {
+        const forms = this.findForms();
+        this.post(forms);
+      } catch (e) {
+        console.warn("[Formik Inspector] Scan failed:", e);
+      }
+    }
+    
+    /** Schedules a debounced scan to avoid excessive updates. */
+    scheduleScan(delay = 150) {
+      clearTimeout(this.debounceTimer);
+      this.debounceTimer = setTimeout(() => this.scan(), delay);
+    }
+  }
 
-			visit(f);
+  // Initialize the inspector and expose a debug API.
+  const inspector = new FormikInspector();
+  window.__FORMIK_INSPECTOR_API__ = { forceScan: () => inspector.scan() };
 
-			// Children first (BFS)
-			if (f.child) q.push(f.child);
-			// Then siblings (stay at level)
-			if (f.sibling) q.push(f.sibling);
-			// Some renderers expose alternate trees; ignore to keep it simple
-		}
-	}
-
-	// Best path: ask DevTools for roots
-	function getRootsViaHook() {
-		const out = [];
-		if (!HOOK.getFiberRoots || !HOOK.renderers) return out;
-		try {
-			HOOK.renderers.forEach((_, id) => {
-				const set = HOOK.getFiberRoots(id);
-				if (set?.size) set.forEach((r) => r?.current && out.push(r.current));
-			});
-		} catch (e) {
-			log("getFiberRoots failed", e);
-		}
-		return out;
-	}
-
-	// Gentle fallback: try common containers + renderer.findFiberByHostInstance
-	function getRootsFallback() {
-		const roots = [];
-		const containers = document.querySelectorAll(
-			'[data-reactroot], #root, #app, [id*="root"], [id*="app"]',
-		);
-		if (!containers.length || !HOOK.renderers) return roots;
-
-		HOOK.renderers.forEach((renderer) => {
-			const find = renderer?.findFiberByHostInstance;
-			if (!find) return;
-			containers.forEach((el) => {
-				const host = el.firstElementChild || el;
-				try {
-					const fiber = find(host);
-					let cur = fiber;
-					while (cur && (cur.return || cur._owner))
-						cur = cur.return || cur._owner;
-					if (cur) roots.push(cur);
-				} catch {
-					/* ignore */
-				}
-			});
-		});
-		return roots;
-	}
-
-	function scanForms() {
-		const forms = [];
-		const roots = getRootsViaHook();
-		const allRoots = roots.length ? roots : getRootsFallback();
-
-		for (const root of allRoots) {
-			traverseFiber(root, (fiber) => {
-				const bag = getFormikBagFromFiber(fiber);
-				if (bag) forms.push(toFormData(bag, forms.length));
-			});
-		}
-
-		log("scan complete:", { roots: allRoots.length, forms: forms.length });
-		return forms;
-	}
-
-	function post(forms) {
-		window.postMessage(
-			{
-				source: "formik-inspector",
-				type: "forms-update",
-				forms,
-				timestamp: Date.now(),
-			},
-			"*",
-		);
-		if (forms.length !== lastCount) {
-			lastCount = forms.length;
-			window.postMessage(
-				{
-					source: "formik-inspector",
-					type: "badge-update",
-					count: forms.length,
-				},
-				"*",
-			);
-		}
-	}
-
-	function updateNow() {
-		try {
-			post(scanForms());
-		} catch (e) {
-			console.warn("[Formik Inspector] scan failed:", e);
-		}
-	}
-
-	function debouncedUpdate(ms = 100) {
-		if (debounceId) clearTimeout(debounceId);
-		debounceId = setTimeout(updateNow, ms);
-	}
-
-	// ---- Wiring: fast path (React commits) + safe fallbacks --------------------
-
-	// Initial snapshot, slightly delayed so apps finishing mount get included
-	setTimeout(updateNow, 400);
-
-	// Subscribe to React commits (most efficient)
-	if (HOOK.onCommitFiberRoot) {
-		const orig = HOOK.onCommitFiberRoot;
-		HOOK.onCommitFiberRoot = function (...args) {
-			try {
-				return orig.apply(this, args);
-			} finally {
-				debouncedUpdate();
-			}
-		};
-	}
-
-	// Fallback: DOM mutations can hint at re-renders in non-standard setups
-	const mo = new MutationObserver(() => debouncedUpdate(200));
-	mo.observe(document.documentElement, { childList: true, subtree: true });
-
-	// Manual refresh from extension UI
-	window.addEventListener("message", (e) => {
-		if (
-			e?.data?.source === "formik-inspector" &&
-			e.data.type === "refresh-request"
-		) {
-			updateNow();
-		}
-	});
-
-	// Small debug surface
-	window.__FORMIK_INSPECTOR_DEBUG__ = {
-		scanForms,
-		forceScan: updateNow,
-		getRootsViaHook,
-		getRootsFallback,
-		HOOK,
-	};
-
-	log("ready");
 })();
