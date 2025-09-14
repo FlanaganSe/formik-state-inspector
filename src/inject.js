@@ -1,164 +1,229 @@
-(function () {
-  'use strict';
+(() => {
+	// Prevent double-injection (content scripts can run more than once)
+	if (window.__FORMIK_INSPECTOR_ACTIVE__) return;
+	window.__FORMIK_INSPECTOR_ACTIVE__ = true;
 
-  const HOOK = window.__REACT_DEVTOOLS_GLOBAL_HOOK__;
-  if (!HOOK) {
-    console.warn('[Formik Inspector] React DevTools hook missing; cannot inspect.');
-    return;
-  }
+	const HOOK = window.__REACT_DEVTOOLS_GLOBAL_HOOK__;
+	if (!HOOK) {
+		console.warn(
+			"[Formik Inspector] React DevTools hook not found; no inspection.",
+		);
+		return;
+	}
 
-  const DEBUG = true;
-  const log = {
-    info: (...a) => DEBUG && console.log('[Formik Inspector]', ...a),
-    warn: (...a) => console.warn('[Formik Inspector]', ...a),
-    error: (...a) => console.error('[Formik Inspector]', ...a),
-  };
+	// Toggle for local debugging
+	const DEBUG = false;
+	const log = (...a) => DEBUG && console.log("[Formik Inspector]", ...a);
 
-  let seen = new WeakSet();
-  let debounceTimer = null;
-  let lastFormCount = 0;
+	let lastCount = 0;
+	let debounceId;
 
-  function isFormikProviderFiber(fiber) {
-    const props = fiber?.memoizedProps;
-    const ctx = fiber?.type?._context;
-    const bag = props?.value;
+	// ---- Small, clear helpers -------------------------------------------------
 
-    if (ctx) {
-      const name = ctx.displayName || ctx._displayName || '';
-      if (name.includes('FormikContext') || name === 'Formik' || name.includes('Formik')) {
-        return bag && typeof bag === 'object' ? bag : null;
-      }
-    }
+	const isObj = (x) => x != null && typeof x === "object";
 
-    if (bag && typeof bag === 'object') {
-      const has = (k, type) => typeof bag[k] === type || bag[k] === undefined;
-      const looksLikeFormik =
-        typeof bag.values === 'object' &&
-        typeof bag.errors === 'object' &&
-        typeof bag.touched === 'object' &&
-        has('handleSubmit', 'function') &&
-        has('handleChange', 'function');
-      if (looksLikeFormik) return bag;
-    }
+	// Heuristic: tolerate Formik versions by checking context *or* bag shape
+	function getFormikBagFromFiber(fiber) {
+		const props = fiber?.memoizedProps;
+		const bag = props?.value;
+		const type = fiber?.type;
+		const ctx = type?._context;
+		const typeName = type?.name || "";
 
-    const tName = fiber?.type?.name;
-    if (tName && (tName.includes('FormikContext') || tName.includes('Formik')) && bag) return bag;
-    return null;
-  }
+		// If it's a context provider named like Formik, trust it.
+		const ctxLooksFormik =
+			!!ctx && /Formik/i.test(ctx.displayName || ctx._displayName || "");
 
-  function toFormData(bag, index) {
-    return {
-      id: `form-${index}`,
-      values: bag.values ?? {},
-      errors: bag.errors ?? {},
-      touched: bag.touched ?? {},
-      isSubmitting: bag.isSubmitting ?? false,
-      isValidating: bag.isValidating ?? false,
-      isValid: bag.isValid ?? true,
-      submitCount: bag.submitCount ?? 0,
-      dirty: bag.dirty ?? false,
-      status: bag.status,
-      initialValues: bag.initialValues ?? {},
-    };
-  }
+		// If component name hints at Formik, prefer it too.
+		const typeLooksFormik = /Formik|FormikContext/i.test(typeName || "");
 
-  function walk(fiber, forms, depth = 0) {
-    if (!fiber || depth > 60 || seen.has(fiber)) return;
-    seen.add(fiber);
+		// Generic “Formik bag” shape (loose on purpose for version drift)
+		const looksLikeBag =
+			isObj(bag) &&
+			isObj(bag.values) &&
+			isObj(bag.errors) &&
+			isObj(bag.touched) &&
+			// common methods, optional: tolerate undefined to span versions
+			(bag.handleSubmit === undefined ||
+				typeof bag.handleSubmit === "function") &&
+			(bag.handleChange === undefined ||
+				typeof bag.handleChange === "function");
 
-    try {
-      const bag = isFormikProviderFiber(fiber);
-      if (bag) forms.push(toFormData(bag, forms.length));
-    } catch (e) {
-      log.warn('Error while checking fiber:', e);
-    }
+		return (ctxLooksFormik || typeLooksFormik || looksLikeBag) && isObj(bag)
+			? bag
+			: null;
+	}
 
-    if (fiber.child) walk(fiber.child, forms, depth + 1);
-    if (fiber.sibling) walk(fiber.sibling, forms, depth);
-  }
+	function toFormData(bag, idx) {
+		// Only pluck safe, serializable fields; default generously
+		return {
+			id: `form-${idx}`,
+			values: bag.values ?? {},
+			errors: bag.errors ?? {},
+			touched: bag.touched ?? {},
+			isSubmitting: !!bag.isSubmitting,
+			isValidating: !!bag.isValidating,
+			isValid: bag.isValid ?? true,
+			submitCount: bag.submitCount ?? 0,
+			dirty: !!bag.dirty,
+			status: bag.status,
+			initialValues: bag.initialValues ?? {},
+		};
+	}
 
-  function getRoots() {
-    const roots = [];
-    if (HOOK.getFiberRoots && HOOK.renderers && typeof HOOK.renderers.forEach === 'function') {
-      HOOK.renderers.forEach((renderer, id) => {
-        try {
-          const set = HOOK.getFiberRoots(id);
-          if (set && set.size) set.forEach(r => r?.current && roots.push(r.current));
-        } catch (e) {
-          log.warn('getFiberRoots failed for renderer', id, e);
-        }
-      });
-    }
-    if (roots.length) return roots;
+	// Breadth-first walk keeps stack tiny; WeakSet avoids revisits
+	function traverseFiber(root, visit) {
+		if (!root) return;
+		const seen = new WeakSet();
+		const q = [root];
+		while (q.length) {
+			const f = q.shift();
+			if (!f || seen.has(f)) continue;
+			seen.add(f);
 
-    // Fallback: attempt via renderer APIs using common containers
-    const containers = document.querySelectorAll('[data-reactroot], #root, #app, [id*="root"], [id*="app"]');
-    if (HOOK.renderers) {
-      HOOK.renderers.forEach(renderer => {
-        if (!renderer.findFiberByHostInstance) return;
-        containers.forEach(el => {
-          const host = el.firstElementChild || el;
-          try {
-            const fiber = renderer.findFiberByHostInstance(host);
-            let cur = fiber;
-            while (cur && (cur.return || cur._owner)) cur = cur.return || cur._owner;
-            if (cur) roots.push(cur);
-          } catch (_) {}
-        });
-      });
-    }
-    return roots;
-  }
+			visit(f);
 
-  function scanForms() {
-    seen = new WeakSet();
-    const forms = [];
-    const roots = getRoots();
-    log.info('Scanning. Renderers:', HOOK.renderers?.size || 0, 'Roots:', roots.length);
-    roots.forEach(root => walk(root, forms));
-    log.info('Scan complete. Forms:', forms.length);
-    return forms;
-  }
+			// Children first (BFS)
+			if (f.child) q.push(f.child);
+			// Then siblings (stay at level)
+			if (f.sibling) q.push(f.sibling);
+			// Some renderers expose alternate trees; ignore to keep it simple
+		}
+	}
 
-  function sendUpdate() {
-    const forms = scanForms();
-    window.postMessage({ source: 'formik-inspector', type: 'forms-update', forms, timestamp: Date.now() }, '*');
-    if (forms.length !== lastFormCount) {
-      lastFormCount = forms.length;
-      window.postMessage({ source: 'formik-inspector', type: 'badge-update', count: forms.length }, '*');
-    }
-  }
+	// Best path: ask DevTools for roots
+	function getRootsViaHook() {
+		const out = [];
+		if (!HOOK.getFiberRoots || !HOOK.renderers) return out;
+		try {
+			HOOK.renderers.forEach((_, id) => {
+				const set = HOOK.getFiberRoots(id);
+				if (set?.size) set.forEach((r) => r?.current && out.push(r.current));
+			});
+		} catch (e) {
+			log("getFiberRoots failed", e);
+		}
+		return out;
+	}
 
-  function debouncedUpdate() {
-    if (debounceTimer) clearTimeout(debounceTimer);
-    debounceTimer = setTimeout(sendUpdate, 100);
-  }
+	// Gentle fallback: try common containers + renderer.findFiberByHostInstance
+	function getRootsFallback() {
+		const roots = [];
+		const containers = document.querySelectorAll(
+			'[data-reactroot], #root, #app, [id*="root"], [id*="app"]',
+		);
+		if (!containers.length || !HOOK.renderers) return roots;
 
-  // Initial scan shortly after inject
-  setTimeout(sendUpdate, 600);
+		HOOK.renderers.forEach((renderer) => {
+			const find = renderer?.findFiberByHostInstance;
+			if (!find) return;
+			containers.forEach((el) => {
+				const host = el.firstElementChild || el;
+				try {
+					const fiber = find(host);
+					let cur = fiber;
+					while (cur && (cur.return || cur._owner))
+						cur = cur.return || cur._owner;
+					if (cur) roots.push(cur);
+				} catch {
+					/* ignore */
+				}
+			});
+		});
+		return roots;
+	}
 
-  // Subscribe to React commits for live updates
-  if (HOOK.onCommitFiberRoot) {
-    const orig = HOOK.onCommitFiberRoot;
-    HOOK.onCommitFiberRoot = function (...args) {
-      try { orig.apply(this, args); } catch (e) { /* ignore */ }
-      debouncedUpdate();
-    };
-    log.info('Subscribed to commit hook');
-  }
+	function scanForms() {
+		const forms = [];
+		const roots = getRootsViaHook();
+		const allRoots = roots.length ? roots : getRootsFallback();
 
-  // Manual refresh from popup
-  window.addEventListener('message', (event) => {
-    if (event.data?.source === 'formik-inspector' && event.data?.type === 'refresh-request') sendUpdate();
-  });
+		for (const root of allRoots) {
+			traverseFiber(root, (fiber) => {
+				const bag = getFormikBagFromFiber(fiber);
+				if (bag) forms.push(toFormData(bag, forms.length));
+			});
+		}
 
-  // Debug helpers
-  window.__FORMIK_INSPECTOR_DEBUG__ = {
-    scanForms,
-    getRoots,
-    forceScan: sendUpdate,
-    HOOK,
-  };
+		log("scan complete:", { roots: allRoots.length, forms: forms.length });
+		return forms;
+	}
 
-  log.info('Injected and ready');
+	function post(forms) {
+		window.postMessage(
+			{
+				source: "formik-inspector",
+				type: "forms-update",
+				forms,
+				timestamp: Date.now(),
+			},
+			"*",
+		);
+		if (forms.length !== lastCount) {
+			lastCount = forms.length;
+			window.postMessage(
+				{
+					source: "formik-inspector",
+					type: "badge-update",
+					count: forms.length,
+				},
+				"*",
+			);
+		}
+	}
+
+	function updateNow() {
+		try {
+			post(scanForms());
+		} catch (e) {
+			console.warn("[Formik Inspector] scan failed:", e);
+		}
+	}
+
+	function debouncedUpdate(ms = 100) {
+		if (debounceId) clearTimeout(debounceId);
+		debounceId = setTimeout(updateNow, ms);
+	}
+
+	// ---- Wiring: fast path (React commits) + safe fallbacks --------------------
+
+	// Initial snapshot, slightly delayed so apps finishing mount get included
+	setTimeout(updateNow, 400);
+
+	// Subscribe to React commits (most efficient)
+	if (HOOK.onCommitFiberRoot) {
+		const orig = HOOK.onCommitFiberRoot;
+		HOOK.onCommitFiberRoot = function (...args) {
+			try {
+				return orig.apply(this, args);
+			} finally {
+				debouncedUpdate();
+			}
+		};
+	}
+
+	// Fallback: DOM mutations can hint at re-renders in non-standard setups
+	const mo = new MutationObserver(() => debouncedUpdate(200));
+	mo.observe(document.documentElement, { childList: true, subtree: true });
+
+	// Manual refresh from extension UI
+	window.addEventListener("message", (e) => {
+		if (
+			e?.data?.source === "formik-inspector" &&
+			e.data.type === "refresh-request"
+		) {
+			updateNow();
+		}
+	});
+
+	// Small debug surface
+	window.__FORMIK_INSPECTOR_DEBUG__ = {
+		scanForms,
+		forceScan: updateNow,
+		getRootsViaHook,
+		getRootsFallback,
+		HOOK,
+	};
+
+	log("ready");
 })();
