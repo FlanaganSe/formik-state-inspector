@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Formik Demo (React 19)</title>
+  <!-- React 19 and ReactDOM 19 -->
+  <script crossorigin src="https://unpkg.com/react@19/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@19/umd/react-dom.production.min.js"></script>
+  <!-- Formik 2 (widely used) -->
+  <script crossorigin src="https://unpkg.com/formik@2/dist/formik.umd.production.min.js"></script>
+  <style>
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, Arial, sans-serif; margin: 24px; }
+    label { display: block; margin: 8px 0 4px; }
+    input { padding: 8px; width: 280px; }
+    .row { margin-bottom: 12px; }
+    .error { color: #ef4444; font-size: 12px; }
+    .ok { color: #10b981; font-size: 12px; }
+  </style>
+  <script>
+    window.addEventListener('DOMContentLoaded', () => {
+      const { Formik } = window.FormikUMD || window;
+
+      function App() {
+        const validate = values => {
+          const errors = {};
+          if (!values.email) errors.email = 'Required';
+          else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(values.email)) errors.email = 'Invalid email';
+          if (!values.name) errors.name = 'Required';
+          return errors;
+        };
+
+        return React.createElement(Formik, {
+          initialValues: { name: '', email: '' },
+          validate,
+          onSubmit: (vals, { setSubmitting }) => {
+            setTimeout(() => { alert(JSON.stringify(vals, null, 2)); setSubmitting(false); }, 300);
+          }
+        }, ({ values, errors, touched, handleChange, handleSubmit, isSubmitting }) => (
+          React.createElement('form', { onSubmit: handleSubmit }, [
+            React.createElement('div', { className: 'row', key: 'r1' }, [
+              React.createElement('label', { htmlFor: 'name', key: 'l1' }, 'Name'),
+              React.createElement('input', { id: 'name', name: 'name', value: values.name, onChange: handleChange, key: 'i1' }),
+              touched.name && errors.name ? React.createElement('div', { className: 'error', key: 'e1' }, errors.name) : React.createElement('div', { className: 'ok', key: 'o1' }, 'Looks good')
+            ]),
+            React.createElement('div', { className: 'row', key: 'r2' }, [
+              React.createElement('label', { htmlFor: 'email', key: 'l2' }, 'Email'),
+              React.createElement('input', { id: 'email', name: 'email', value: values.email, onChange: handleChange, key: 'i2' }),
+              touched.email && errors.email ? React.createElement('div', { className: 'error', key: 'e2' }, errors.email) : React.createElement('div', { className: 'ok', key: 'o2' }, 'Looks good')
+            ]),
+            React.createElement('button', { type: 'submit', disabled: isSubmitting, key: 'b' }, isSubmitting ? 'Submitting...' : 'Submit')
+          ])
+        ));
+      }
+
+      const root = document.getElementById('root');
+      ReactDOM.createRoot(root).render(React.createElement(App));
+    });
+  </script>
+</head>
+<body>
+  <div id="root"></div>
+</body>
+</html>
+

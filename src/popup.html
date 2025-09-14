@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Formik State Inspector</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="container">
+    <header class="header">
+      <div class="header-content">
+        <h1 class="title">
+          <svg class="icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+            <polyline points="14,2 14,8 20,8"/>
+            <line x1="16" y1="13" x2="8" y2="13"/>
+            <line x1="16" y1="17" x2="8" y2="17"/>
+            <polyline points="10,9 9,9 8,9"/>
+          </svg>
+          Formik Inspector
+        </h1>
+        <button class="refresh-btn" id="refreshBtn" title="Refresh forms">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="23 4 23 10 17 10"/>
+            <polyline points="1 20 1 14 7 14"/>
+            <path d="m3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+          </svg>
+        </button>
+      </div>
+    </header>
+
+    <div class="status-bar" id="statusBar">
+      <span class="status-text" id="statusText">Scanning for forms...</span>
+      <div class="status-dot" id="statusDot"></div>
+    </div>
+
+    <main class="content" id="content">
+      <div class="empty-state" id="emptyState">
+        <div class="empty-icon">
+          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+            <polyline points="14,2 14,8 20,8"/>
+            <line x1="16" y1="13" x2="8" y2="13"/>
+            <line x1="16" y1="17" x2="8" y2="17"/>
+            <polyline points="10,9 9,9 8,9"/>
+          </svg>
+        </div>
+        <h3 class="empty-title" id="emptyTitle">No Formik forms detected</h3>
+        <p class="empty-description" id="emptyDescription">
+          Make sure you're on a page with React and Formik forms.
+        </p>
+      </div>
+
+      <div class="forms-list" id="formsList"></div>
+    </main>
+  </div>
+
+  <template id="formTemplate">
+    <div class="form-card" data-form-id="">
+      <div class="form-header">
+        <h3 class="form-title">Form <span class="form-number"></span></h3>
+        <div class="form-status">
+          <span class="status-indicator submitting" title="Submitting" style="display: none;">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M21 12a9 9 0 11-6.219-8.56"/>
+            </svg>
+          </span>
+          <span class="status-indicator validating" title="Validating" style="display: none;">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="10"/>
+              <path d="m9 12 2 2 4-4"/>
+            </svg>
+          </span>
+          <span class="status-indicator dirty" title="Has changes" style="display: none;">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="3"/>
+            </svg>
+          </span>
+        </div>
+      </div>
+
+      <div class="form-summary">
+        <div class="summary-item">
+          <span class="summary-label">Fields:</span>
+          <span class="summary-value field-count">0</span>
+        </div>
+        <div class="summary-item">
+          <span class="summary-label">Errors:</span>
+          <span class="summary-value error-count">0</span>
+        </div>
+        <div class="summary-item">
+          <span class="summary-label">Touched:</span>
+          <span class="summary-value touched-count">0</span>
+        </div>
+        <div class="summary-item">
+          <span class="summary-label">Submits:</span>
+          <span class="summary-value submit-count">0</span>
+        </div>
+      </div>
+
+      <div class="form-sections">
+        <div class="section values-section">
+          <div class="section-header">
+            <h4 class="section-title">Values</h4>
+            <button class="copy-btn" data-copy="values" title="Copy values">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+                <path d="m5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+              </svg>
+            </button>
+          </div>
+          <div class="section-content values-content"></div>
+        </div>
+
+        <div class="section errors-section">
+          <div class="section-header">
+            <h4 class="section-title">Errors</h4>
+            <button class="copy-btn" data-copy="errors" title="Copy errors">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+                <path d="m5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+              </svg>
+            </button>
+          </div>
+          <div class="section-content errors-content"></div>
+        </div>
+
+        <div class="section touched-section">
+          <div class="section-header">
+            <h4 class="section-title">Touched</h4>
+            <button class="copy-btn" data-copy="touched" title="Copy touched">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+                <path d="m5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+              </svg>
+            </button>
+          </div>
+          <div class="section-content touched-content"></div>
+        </div>
+      </div>
+    </div>
+  </template>
+
+  <script type="module" src="popup.js"></script>
+</body>
+</html>
