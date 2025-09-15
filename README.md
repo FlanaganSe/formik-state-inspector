@@ -1,58 +1,74 @@
 # Formik State Inspector
 
-A lightweight and efficient Chrome developer tool to inspect Formik form state in React applications in real-time.
+A lightweight Chrome extension for real-time inspection of Formik form state in React applications.
+
+![Chrome](https://img.shields.io/badge/Chrome-Extension-brightgreen) ![Manifest V3](https://img.shields.io/badge/Manifest-V3-blue) ![React DevTools Required](https://img.shields.io/badge/Requires-React%20DevTools-orange) ![License](https://img.shields.io/badge/License-Not%20Specified-red)
 
 ## Features
 
-- **Real-time Updates**: Automatically detects and displays Formik state changes as you interact with forms
-- **Multiple Forms Support**: Lists all Formik instances on a page
-- **Clean JSON Display**: Simple, readable display of form `values`, `errors`, and `touched` state
-- **Copy to Clipboard**: One-click copy of form state as JSON
-- **Minimal & Fast**: Ultra-lightweight architecture with direct communication paths
+- **Real-time updates** on every React render
+- **Multi-form support** - inspect all Formik instances on a page
+- **Complete state view** - values, errors, touched fields, and status flags
+- **One-click JSON copy** for any state object
+- **Badge counter** showing detected forms
+- **100% private** - no network requests, all data stays local
+
+## Requirements
+
+- [React Developer Tools](https://chrome.google.com/webstore/detail/react-developer-tools/fmkadmapgofadopljbjfkapdkoienihi) extension must be installed
+- Web pages using React with Formik
+
+## Installation
+
+### Local Development
+1. Clone this repository
+2. Open Chrome and go to `chrome://extensions/`
+3. Enable **Developer mode**
+4. Click **Load unpacked** and select this directory
+
+## Usage
+
+1. Navigate to a page with React and Formik forms
+2. Click the Formik Inspector icon in your toolbar
+3. View form state in the popup
+4. Use **Copy** buttons to export JSON data
+5. Click **⟳** to manually refresh
 
 ## How It Works
 
-The extension has a simple three-part architecture:
+Simple 4-component architecture:
 
-1. **Content Script (`src/content.js`)**: Injected into web pages. Injects the page script and handles communication between the popup and page context.
+- **inject.js** - Hooks into React DevTools to scan the component tree for Formik instances
+- **content.js** - Bridge between page and extension
+- **popup.js** - Renders the inspection UI
+- **background.js** - Updates the badge counter
 
-2. **Injected Script (`src/inject.js`)**: Accesses the React DevTools global hook to find and extract Formik state from the fiber tree. Sends updates via window messaging.
+All processing happens locally. No data leaves your browser.
 
-3. **Popup (`src/popup.js` and `src/popup.html`)**: Simple UI that requests data directly from the content script and displays form state with clean JSON formatting.
+## Contributing
 
-4. **Background Script (`src/background.js`)**: Minimal service worker that only handles extension badge updates.
+**Quick start:**
+1. Follow installation steps above
+2. Edit files in `src/` directly (no build step)
+3. Reload extension in `chrome://extensions/`
+4. Refresh target pages to update content scripts
 
-## Getting Started for Developers
+**See [FutureEnhancements.md](FutureEnhancements.md) for planned improvements.**
 
-1.  **Clone the repository:**
-    ```bash
-    git clone https://github.com/your-username/formik-state-inspector.git
-    cd formik-state-inspector
-    ```
+**Philosophy:**
+- Zero external dependencies
+- Privacy-first design
+- Simple, readable code
 
-2.  **Load the extension in Chrome:**
-    - Open Chrome and navigate to `chrome://extensions`.
-    - Enable "Developer mode" in the top right corner.
-    - Click "Load unpacked".
-    - Select the `formik-state-inspector` directory.
+## Privacy
 
-3.  **Start developing:**
-    - The extension is now installed. You can make changes to the code and see them reflected by reloading the extension from the `chrome://extensions` page.
+- **No data collection** - extension never stores or transmits data
+- **Local processing only** - all inspection happens in your browser
+- **Automatic cleanup** - data vanishes when popup closes
+- **Open source** - fully auditable
 
-## Project Structure
+See [PRIVACY.md](PRIVACY.md) for complete details.
 
-```
-/
-├── assets/              # Icons for the extension
-├── src/
-│   ├── background.js    # Minimal service worker (badge management only) - 23 lines
-│   ├── content.js       # Bridge between popup and page context - 37 lines
-│   ├── inject.js        # Core Formik detection logic - 88 lines
-│   ├── popup.css        # Clean, minimal styling - 216 lines
-│   ├── popup.html       # Simple popup structure - 30 lines
-│   └── popup.js         # Streamlined popup logic - 125 lines
-├── manifest.json        # Extension manifest file
-└── README.md            # This file
-```
+## License
 
-**Total: ~519 lines of code** (dramatically reduced from original complex implementation)
+License to be added before distribution.

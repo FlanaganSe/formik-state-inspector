@@ -32,7 +32,7 @@ The extension only accesses:
 
 - **Formik Form State**: Values, errors, touched fields, and submission status from Formik forms
 - **React Component Tree**: To locate Formik providers in the React application
-- **Current Tab**: To inject scripts and communicate with the active web page
+- **The current page**: To relay Formik state to the popup for display
 
 This data is:
 -  **Never stored permanently**
@@ -42,19 +42,13 @@ This data is:
 
 ## Permissions
 
-The extension requires these Chrome permissions:
+The extension requests no special host or scripting permissions.
 
-### `activeTab`
-- **Purpose**: Access the current tab to detect Formik forms
-- **Scope**: Only the currently active tab when you click the extension
-- **Usage**: Inject content scripts to scan for React + Formik
+- No host permissions: Content scripts are declared statically and run only on pages where extensions are allowed by Chrome.
+- No `activeTab`: The popup communicates with the content script using standard messaging without elevated tab access.
+- No `scripting`: The extension does not programmatically inject scripts; it loads a web-accessible script via the content script.
 
-### `scripting`
-- **Purpose**: Inject JavaScript to access React DevTools Hook
-- **Scope**: Only when explicitly activated on a tab
-- **Usage**: Detect and monitor Formik form state changes
-
-**Important**: The extension only activates when you explicitly click the extension icon. It does not run automatically on all websites.
+The extension becomes active on allowed pages automatically and only displays data when you open the popup.
 
 ## Copy to Clipboard
 

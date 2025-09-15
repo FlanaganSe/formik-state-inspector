@@ -2,11 +2,8 @@
   "manifest_version": 3,
   "name": "Formik State Inspector",
   "version": "1.0.0",
-  "description": "Inspect Formik form state in React applications with real-time updates and beautiful UI",
-  "permissions": [
-    "activeTab",
-    "scripting"
-  ],
+  "description": "Inspect Formik form state in React applications with real-time updates. View values, errors, and touched fields instantly.",
+  "author": "Formik State Inspector Team",
   "background": {
     "service_worker": "src/background.js"
   },

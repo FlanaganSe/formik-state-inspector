@@ -46,7 +46,7 @@ function createFormCard(form, index) {
     <div class="form-section">
       <div class="section-header">
         <strong>Values</strong>
-        <button class="copy-btn" onclick="copyData('${JSON.stringify(form.values).replace(/'/g, "\\'")}')">Copy</button>
+        <button class="copy-btn" data-copy="values">Copy</button>
       </div>
       <pre class="json-data">${JSON.stringify(form.values, null, 2)}</pre>
     </div>
@@ -55,7 +55,7 @@ function createFormCard(form, index) {
     <div class="form-section error-section">
       <div class="section-header">
         <strong>Errors</strong>
-        <button class="copy-btn" onclick="copyData('${JSON.stringify(form.errors).replace(/'/g, "\\'")}')">Copy</button>
+        <button class="copy-btn" data-copy="errors">Copy</button>
       </div>
       <pre class="json-data">${JSON.stringify(form.errors, null, 2)}</pre>
     </div>` : ''}
@@ -63,11 +63,20 @@ function createFormCard(form, index) {
     <div class="form-section">
       <div class="section-header">
         <strong>Touched</strong>
-        <button class="copy-btn" onclick="copyData('${JSON.stringify(form.touched).replace(/'/g, "\\'")}')">Copy</button>
+        <button class="copy-btn" data-copy="touched">Copy</button>
       </div>
       <pre class="json-data">${JSON.stringify(form.touched, null, 2)}</pre>
     </div>
   `;
+
+  // Add click listeners for copy buttons
+  card.querySelectorAll('.copy-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const type = btn.dataset.copy;
+      const data = form[type] || {};
+      navigator.clipboard.writeText(JSON.stringify(data, null, 2));
+    });
+  });
 
   return card;
 }
@@ -88,13 +97,6 @@ function renderForms(forms) {
   });
 }
 
-async function copyData(jsonString) {
-  try {
-    await navigator.clipboard.writeText(jsonString);
-  } catch (err) {
-    console.error('Copy failed:', err);
-  }
-}
 
 function getForms() {
   chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
@@ -121,6 +123,3 @@ function refresh() {
 // Initialize
 refreshBtn.addEventListener('click', refresh);
 document.addEventListener('DOMContentLoaded', getForms);
-
-// Make copyData available globally for inline onclick handlers
-window.copyData = copyData;
