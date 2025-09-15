@@ -2,7 +2,7 @@
 
 A lightweight Chrome extension for real-time inspection of Formik form state in React applications.
 
-![Chrome](https://img.shields.io/badge/Chrome-Extension-brightgreen) ![Manifest V3](https://img.shields.io/badge/Manifest-V3-blue) ![React DevTools Required](https://img.shields.io/badge/Requires-React%20DevTools-orange) ![License](https://img.shields.io/badge/License-Not%20Specified-red)
+![Chrome](https://img.shields.io/badge/Chrome-Extension-brightgreen) ![Manifest V3](https://img.shields.io/badge/Manifest-V3-blue) ![React DevTools Required](https://img.shields.io/badge/Requires-React%20DevTools-orange) ![License](https://img.shields.io/badge/License-MIT-yellow)
 
 ## Features
 
@@ -45,6 +45,26 @@ Simple 4-component architecture:
 
 All processing happens locally. No data leaves your browser.
 
+### Security & Robustness
+
+The extension includes comprehensive defensive coding:
+- **Memory leak prevention** - Timeouts are properly cleared and managed with overlap protection
+- **Infinite loop protection** - Maximum iteration limits on fiber tree traversal with global caps
+- **Performance optimization** - Fast change detection without expensive JSON operations
+- **Defensive data handling** - Type checking and validation for all form data
+- **XSS protection** - Uses DOM APIs instead of innerHTML
+- **Secure messaging** - PostMessage with specific origins instead of wildcards
+- **Proper cleanup** - Event listeners and hooks are cleaned up on page unload
+- **Optimized rendering** - DocumentFragment for efficient DOM updates
+- **Silent operation** - Minimal console output to avoid user confusion
+- **Error boundaries** - Graceful handling of React DevTools edge cases
+
+### Troubleshooting
+
+- If you see “Extension not loaded on this page”, ensure React DevTools is installed and the target page uses React.
+- Some sites with strict CSP may block injection; the extension fails silently in those cases without spamming the console.
+- Badge count updates only when forms actually change to avoid unnecessary noise.
+
 ## Contributing
 
 **Quick start:**
@@ -53,12 +73,15 @@ All processing happens locally. No data leaves your browser.
 3. Reload extension in `chrome://extensions/`
 4. Refresh target pages to update content scripts
 
-**See [FutureEnhancements.md](FutureEnhancements.md) for planned improvements.**
+## Future Enhancements
 
-**Philosophy:**
-- Zero external dependencies
-- Privacy-first design
-- Simple, readable code
+Production-readiness improvements prioritized by impact and ease of implementation.
+
+**Collapsible JSON Sections**
+- **What**: Expand/collapse values, errors, touched
+- **Why**: Large form objects are hard to read
+- **Impact**: Better scalability
+
 
 ## Privacy
 
@@ -68,7 +91,3 @@ All processing happens locally. No data leaves your browser.
 - **Open source** - fully auditable
 
 See [PRIVACY.md](PRIVACY.md) for complete details.
-
-## License
-
-License to be added before distribution.
