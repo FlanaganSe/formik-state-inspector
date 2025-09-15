@@ -4,23 +4,23 @@ A lightweight and efficient Chrome developer tool to inspect Formik form state i
 
 ## Features
 
-- **Real-time Updates**: Automatically detects and displays Formik state changes as you interact with forms.
-- **Multiple Forms Support**: Lists all Formik instances on a page.
-- **Detailed View**: Inspect `values`, `errors`, `touched` fields, and other status flags like `isSubmitting`, `isValidating`, and `dirty`.
-- **Copy to Clipboard**: Easily copy form state objects (`values`, `errors`, `touched`) as JSON.
-- **Efficient & Secure**: Runs entirely in the browser, with no data sent to any server. Leverages the React DevTools hook for efficient state detection.
+- **Real-time Updates**: Automatically detects and displays Formik state changes as you interact with forms
+- **Multiple Forms Support**: Lists all Formik instances on a page
+- **Clean JSON Display**: Simple, readable display of form `values`, `errors`, and `touched` state
+- **Copy to Clipboard**: One-click copy of form state as JSON
+- **Minimal & Fast**: Ultra-lightweight architecture with direct communication paths
 
 ## How It Works
 
-The extension has four main parts that work together:
+The extension has a simple three-part architecture:
 
-1.  **Content Script (`src/content.js`)**: Injected into the web page. Its main job is to inject the `inject.js` script into the page's own execution context, allowing it to access the `window` object.
+1. **Content Script (`src/content.js`)**: Injected into web pages. Injects the page script and handles communication between the popup and page context.
 
-2.  **Injected Script (`src/inject.js`)**: This is the core logic. It accesses the React DevTools global hook (`window.__REACT_DEVTOOLS_GLOBAL_HOOK__`) to find the React fiber tree. It then traverses the tree to find Formik components and extracts their state. It sends this data back to the content script.
+2. **Injected Script (`src/inject.js`)**: Accesses the React DevTools global hook to find and extract Formik state from the fiber tree. Sends updates via window messaging.
 
-3.  **Background Script (`src/background.js`)**: The central coordinator. It runs as a service worker, listening for messages from the content script. It stores the latest form state for each tab and updates the extension's badge with the number of forms found.
+3. **Popup (`src/popup.js` and `src/popup.html`)**: Simple UI that requests data directly from the content script and displays form state with clean JSON formatting.
 
-4.  **Popup (`src/popup.js` and `src/popup.html`)**: The UI of the extension. When you click the extension icon, the popup opens and requests the latest form data from the background script. It then renders the state in a clean and readable format.
+4. **Background Script (`src/background.js`)**: Minimal service worker that only handles extension badge updates.
 
 ## Getting Started for Developers
 
@@ -45,20 +45,14 @@ The extension has four main parts that work together:
 /
 ├── assets/              # Icons for the extension
 ├── src/
-│   ├── background.js    # Service worker for managing state and communication
-│   ├── content.js       # Injected into the page to bridge to inject.js
-│   ├── inject.js        # Core logic to find Formik state via React DevTools hook
-│   ├── popup.css        # Styles for the popup
-│   ├── popup.html       # HTML for the popup
-│   └── popup.js         # Logic for the popup UI
+│   ├── background.js    # Minimal service worker (badge management only) - 23 lines
+│   ├── content.js       # Bridge between popup and page context - 37 lines
+│   ├── inject.js        # Core Formik detection logic - 88 lines
+│   ├── popup.css        # Clean, minimal styling - 216 lines
+│   ├── popup.html       # Simple popup structure - 30 lines
+│   └── popup.js         # Streamlined popup logic - 125 lines
 ├── manifest.json        # Extension manifest file
 └── README.md            # This file
 ```
 
-## Contributing
-
-Contributions are welcome! If you have ideas for improvements or find a bug, please open an issue or submit a pull request.
-
-## License
-
-This project is open source and available under the [MIT License](LICENSE).
+**Total: ~519 lines of code** (dramatically reduced from original complex implementation)
