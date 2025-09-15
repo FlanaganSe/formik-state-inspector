@@ -6,28 +6,46 @@ const refreshBtn = $("refreshBtn");
 
 let currentTab;
 
+// Verify DOM elements exist
+if (!status || !emptyState || !formsList || !refreshBtn) {
+	console.error("[Formik Inspector] Required DOM elements not found");
+}
+
 function setStatus(text, className = "") {
-	status.textContent = text;
-	status.className = `status ${className}`;
+	if (status) {
+		status.textContent = String(text || "");
+		status.className = `status ${className || ""}`;
+	}
 }
 
 function showEmpty() {
-	emptyState.style.display = "block";
-	formsList.style.display = "none";
+	if (emptyState) emptyState.style.display = "block";
+	if (formsList) formsList.style.display = "none";
 }
 
 function showForms() {
-	emptyState.style.display = "none";
-	formsList.style.display = "block";
+	if (emptyState) emptyState.style.display = "none";
+	if (formsList) formsList.style.display = "block";
 }
 
 function createFormCard(form, index) {
+	if (!form || typeof form !== "object") {
+		return document.createElement("div");
+	}
+
 	const card = document.createElement("div");
 	card.className = "form-card";
 
-	const errorCount = Object.keys(form.errors || {}).length;
-	const fieldCount = Object.keys(form.values || {}).length;
-	const touchedCount = Object.values(form.touched || {}).filter(Boolean).length;
+	const errors =
+		form.errors && typeof form.errors === "object" ? form.errors : {};
+	const values =
+		form.values && typeof form.values === "object" ? form.values : {};
+	const touched =
+		form.touched && typeof form.touched === "object" ? form.touched : {};
+
+	const errorCount = Object.keys(errors).length;
+	const fieldCount = Object.keys(values).length;
+	const touchedCount = Object.values(touched).filter(Boolean).length;
 
 	const statusIndicators = [];
 	if (form.isSubmitting) statusIndicators.push("⟳ Submitting");
@@ -48,7 +66,7 @@ function createFormCard(form, index) {
         <strong>Values</strong>
         <button class="copy-btn" data-copy="values">Copy</button>
       </div>
-      <pre class="json-data">${JSON.stringify(form.values, null, 2)}</pre>
+      <pre class="json-data">${JSON.stringify(values, null, 2)}</pre>
     </div>
 
     ${
@@ -59,7 +77,7 @@ function createFormCard(form, index) {
         <strong>Errors</strong>
         <button class="copy-btn" data-copy="errors">Copy</button>
       </div>
-      <pre class="json-data">${JSON.stringify(form.errors, null, 2)}</pre>
+      <pre class="json-data">${JSON.stringify(errors, null, 2)}</pre>
     </div>`
 				: ""
 		}
@@ -69,7 +87,7 @@ function createFormCard(form, index) {
         <strong>Touched</strong>
         <button class="copy-btn" data-copy="touched">Copy</button>
       </div>
-      <pre class="json-data">${JSON.stringify(form.touched, null, 2)}</pre>
+      <pre class="json-data">${JSON.stringify(touched, null, 2)}</pre>
     </div>
   `;
 
@@ -77,8 +95,14 @@ function createFormCard(form, index) {
 	card.querySelectorAll(".copy-btn").forEach((btn) => {
 		btn.addEventListener("click", () => {
 			const type = btn.dataset.copy;
-			const data = form[type] || {};
-			navigator.clipboard.writeText(JSON.stringify(data, null, 2));
+			let data = {};
+			if (type === "values") data = values;
+			else if (type === "errors") data = errors;
+			else if (type === "touched") data = touched;
+
+			if (navigator?.clipboard?.writeText) {
+				navigator.clipboard.writeText(JSON.stringify(data, null, 2));
+			}
 		});
 	});
 
@@ -86,7 +110,7 @@ function createFormCard(form, index) {
 }
 
 function renderForms(forms) {
-	if (!forms || forms.length === 0) {
+	if (!Array.isArray(forms) || forms.length === 0) {
 		showEmpty();
 		setStatus("No forms found", "inactive");
 		return;
@@ -98,38 +122,85 @@ function renderForms(forms) {
 		"active",
 	);
 
-	formsList.innerHTML = "";
-	forms.forEach((form, index) => {
-		formsList.appendChild(createFormCard(form, index));
-	});
+	if (formsList) {
+		formsList.innerHTML = "";
+		forms.forEach((form, index) => {
+			const card = createFormCard(form, index);
+			if (card) formsList.appendChild(card);
+		});
+	}
 }
 
 function getForms() {
-	chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-		currentTab = tabs[0];
-		chrome.tabs.sendMessage(
-			currentTab.id,
-			{ type: "get-forms" },
-			(response) => {
-				if (chrome.runtime.lastError) {
-					setStatus("Extension not loaded on this page", "error");
-					showEmpty();
-					return;
-				}
-				renderForms(response?.forms || []);
-			},
-		);
-	});
+	try {
+		chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+			if (!Array.isArray(tabs) || tabs.length === 0) {
+				setStatus("No active tab found", "error");
+				showEmpty();
+				return;
+			}
+
+			currentTab = tabs[0];
+			if (!currentTab || !currentTab.id) {
+				setStatus("Invalid tab", "error");
+				showEmpty();
+				return;
+			}
+
+			chrome.tabs.sendMessage(
+				currentTab.id,
+				{ type: "get-forms" },
+				(response) => {
+					if (chrome.runtime.lastError) {
+						setStatus("Extension not loaded on this page", "error");
+						showEmpty();
+						return;
+					}
+					renderForms(response?.forms || []);
+				},
+			);
+		});
+	} catch (_error) {
+		setStatus("Error accessing tab", "error");
+		showEmpty();
+	}
 }
 
 function refresh() {
 	setStatus("Refreshing...", "loading");
-	if (currentTab) {
-		chrome.tabs.sendMessage(currentTab.id, { type: "refresh" });
-		setTimeout(getForms, 500);
+	if (currentTab?.id) {
+		try {
+			chrome.tabs.sendMessage(currentTab.id, { type: "refresh" });
+			setTimeout(() => {
+				try {
+					getForms();
+				} catch (_error) {
+					setStatus("Refresh failed", "error");
+				}
+			}, 500);
+		} catch (_error) {
+			setStatus("Refresh failed", "error");
+		}
+	} else {
+		setStatus("No tab to refresh", "error");
 	}
 }
 
 // Initialize
-refreshBtn.addEventListener("click", refresh);
-document.addEventListener("DOMContentLoaded", getForms);
+try {
+	if (refreshBtn) {
+		refreshBtn.addEventListener("click", refresh);
+	} else {
+		console.error("[Formik Inspector] Refresh button not found");
+	}
+
+	document.addEventListener("DOMContentLoaded", () => {
+		try {
+			getForms();
+		} catch (_error) {
+			setStatus("Initialization failed", "error");
+		}
+	});
+} catch (_error) {
+	// Extension initialization failed - silent
+}
