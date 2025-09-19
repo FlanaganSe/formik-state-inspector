@@ -1,7 +1,7 @@
 {
 	"manifest_version": 3,
 	"name": "Formik State Inspector",
-	"version": "1.0.0",
+	"version": "1.0.1",
 	"description": "Inspect Formik form state in React applications with real-time updates. View values, errors, and touched fields instantly.",
 	"author": "Sean Flanagan",
 	"homepage_url": "https://github.com/FlanaganSe/formik-state-inspector",
