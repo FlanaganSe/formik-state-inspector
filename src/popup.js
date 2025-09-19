@@ -3,6 +3,8 @@ const status = $("status");
 const emptyState = $("emptyState");
 const formsList = $("formsList");
 const refreshBtn = $("refreshBtn");
+const searchInput = $("searchInput");
+const clearSearchBtn = $("clearSearchBtn");
 
 let currentTab;
 
@@ -173,6 +175,8 @@ function createFormCard(form, index) {
 
 let lastFormsCount = 0;
 let lastFormsSignature = "";
+let lastFormsRaw = [];
+let filterQuery = "";
 
 // Fast signature for change detection without full JSON stringify
 function createFormsSignature(forms) {
@@ -193,9 +197,9 @@ function createFormsSignature(forms) {
   return signature;
 }
 
-function renderForms(forms) {
+function renderForms(forms, { force = false } = {}) {
   if (!Array.isArray(forms) || forms.length === 0) {
-    if (lastFormsCount !== 0) {
+    if (lastFormsCount !== 0 || force) {
       showEmpty();
       setStatus("No forms found", "inactive");
       lastFormsCount = 0;
@@ -208,21 +212,48 @@ function renderForms(forms) {
   const currentSignature = createFormsSignature(forms);
   const formsCountChanged = forms.length !== lastFormsCount;
 
-  if (!formsCountChanged && currentSignature === lastFormsSignature) {
+  if (!force && !formsCountChanged && currentSignature === lastFormsSignature) {
     return; // No changes detected
   }
 
   // Update tracking
   lastFormsCount = forms.length;
   lastFormsSignature = currentSignature;
+  lastFormsRaw = forms;
 
-  showForms();
-  setStatus(`Found ${forms.length} form${forms.length === 1 ? "" : "s"}`, "active");
+  // Apply filter if present
+  let displayedForms = forms;
+  if (filterQuery.trim()) {
+    const q = filterQuery.trim().toLowerCase();
+    displayedForms = forms
+      .map((f) => ({
+        ...f,
+        values: filterObjectDeep(f.values, q),
+        errors: filterObjectDeep(f.errors, q),
+        touched: filterObjectDeep(f.touched, q),
+      }))
+      .filter((f) => !isDeepEmpty(f.values) || !isDeepEmpty(f.errors) || !isDeepEmpty(f.touched));
+  }
+
+  if (filterQuery.trim()) {
+    if (displayedForms.length === 0) {
+      showEmpty();
+    } else {
+      showForms();
+    }
+    setStatus(
+      `${displayedForms.length} matching form${displayedForms.length === 1 ? "" : "s"} (of ${forms.length})`,
+      displayedForms.length ? "active" : "inactive"
+    );
+  } else {
+    showForms();
+    setStatus(`Found ${forms.length} form${forms.length === 1 ? "" : "s"}`, "active");
+  }
 
   if (formsList) {
     // Use DocumentFragment for efficient DOM updates
     const fragment = document.createDocumentFragment();
-    forms.forEach((form, index) => {
+    displayedForms.forEach((form, index) => {
       const card = createFormCard(form, index);
       if (card) fragment.appendChild(card);
     });
@@ -247,12 +278,62 @@ async function getForms() {
     const response = await chrome.tabs.sendMessage(currentTab.id, {
       type: "get-forms",
     });
-    renderForms(response?.forms || []);
+    renderForms(response?.forms || [], { force: true });
   } catch (_error) {
     setStatus("Extension not loaded on this page", "error");
     showEmpty();
     // Removed console logging for normal failure cases
   }
+}
+
+// Deep filtering: keep fields where key or primitive value contains query (case-insensitive)
+function filterObjectDeep(input, q) {
+  if (!input || typeof input !== "object") {
+    return matchesPrimitive(input, q) ? input : undefined;
+  }
+
+  if (Array.isArray(input)) {
+    const out = [];
+    for (let i = 0; i < input.length; i++) {
+      const v = input[i];
+      const child = filterObjectDeep(v, q);
+      if (child !== undefined) out.push(child);
+    }
+    return out.length ? out : undefined;
+  }
+
+  const out = {};
+  for (const [key, value] of Object.entries(input)) {
+    const keyMatch = key.toLowerCase().includes(q);
+    if (keyMatch) {
+      out[key] = value;
+      continue;
+    }
+
+    const child = filterObjectDeep(value, q);
+    if (child !== undefined) {
+      out[key] = child;
+      continue;
+    }
+  }
+  return Object.keys(out).length ? out : undefined;
+}
+
+function matchesPrimitive(value, q) {
+  if (value == null) return false;
+  const t = typeof value;
+  if (t === "string" || t === "number" || t === "boolean") {
+    return String(value).toLowerCase().includes(q);
+  }
+  return false;
+}
+
+function isDeepEmpty(v) {
+  if (v === undefined) return true;
+  if (v == null) return true;
+  if (Array.isArray(v)) return v.length === 0 || v.every(isDeepEmpty);
+  if (typeof v === "object") return Object.keys(v).length === 0 || Object.values(v).every(isDeepEmpty);
+  return false;
 }
 
 let refreshTimeout = null;
@@ -285,7 +366,7 @@ async function refresh() {
         const response = await chrome.tabs.sendMessage(currentTab.id, {
           type: "get-forms",
         });
-        renderForms(response?.forms || []);
+        renderForms(response?.forms || [], { force: true });
       } catch {
         setStatus("Refresh failed", "error");
         // Removed console logging for normal failure cases
@@ -304,6 +385,30 @@ async function refresh() {
 // Initialize
 if (refreshBtn) {
   refreshBtn.addEventListener("click", refresh);
+}
+
+// Search handlers
+let searchDebounce;
+if (searchInput) {
+  searchInput.addEventListener("input", () => {
+    const next = searchInput.value || "";
+    if (next === filterQuery) return;
+    filterQuery = next;
+
+    if (searchDebounce) clearTimeout(searchDebounce);
+    searchDebounce = setTimeout(() => {
+      renderForms(lastFormsRaw || [], { force: true });
+    }, 180);
+  });
+}
+
+if (clearSearchBtn && searchInput) {
+  clearSearchBtn.addEventListener("click", () => {
+    if (!filterQuery) return;
+    filterQuery = "";
+    searchInput.value = "";
+    renderForms(lastFormsRaw || [], { force: true });
+  });
 }
 
 document.addEventListener("DOMContentLoaded", getForms);
