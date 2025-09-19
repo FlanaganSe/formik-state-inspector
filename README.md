@@ -10,6 +10,7 @@ A lightweight Chrome extension for real-time inspection of Formik form state in 
 - **Multi-form support** - inspect all Formik instances on a page
 - **Complete state view** - values, errors, touched fields, and status flags
 - **One-click JSON copy** for any state object
+- **Instant search/filter** - show only matching fields (with parents) across values, errors, and touched
 - **Badge counter** showing detected forms
 - **100% private** - no network requests, all data stays local
 
@@ -31,8 +32,12 @@ A lightweight Chrome extension for real-time inspection of Formik form state in 
 1. Navigate to a page with React and Formik forms
 2. Click the Formik Inspector icon in your toolbar
 3. View form state in the popup
-4. Use **Copy** buttons to export JSON data
-5. Click **⟳** to manually refresh
+4. Use the search bar to filter fields and values
+   - Matches are case-insensitive and include field names and primitive values
+   - Only matching fields (and their parent objects/arrays) are shown
+   - Sections and forms without matches are hidden for clarity
+5. Use **Copy** to copy the currently visible (filtered) JSON
+6. Click **⟳** to manually refresh
 
 ## How It Works
 
@@ -56,6 +61,7 @@ The extension includes comprehensive defensive coding:
 - **Secure messaging** - PostMessage with specific origins instead of wildcards
 - **Proper cleanup** - Event listeners and hooks are cleaned up on page unload
 - **Optimized rendering** - DocumentFragment for efficient DOM updates
+- **Non-destructive filtering** - Search operates locally on the view without mutating original data
 - **Silent operation** - Minimal console output to avoid user confusion
 - **Error boundaries** - Graceful handling of React DevTools edge cases
 
@@ -81,6 +87,11 @@ Production-readiness improvements prioritized by impact and ease of implementati
 - **What**: Expand/collapse values, errors, touched
 - **Why**: Large form objects are hard to read
 - **Impact**: Better scalability
+
+**Match Highlighting**
+- **What**: Visually emphasize matched keys/values in filtered view
+- **Why**: Faster scanning when many matches remain
+- **Impact**: Improves readability without changing current behavior
 
 
 ## Privacy
