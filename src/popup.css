@@ -9,7 +9,7 @@ body {
   font-size: 14px;
   color: #333;
   background: #fafafa;
-  width: 500px;
+  width: 600px;
   max-height: 600px;
 }
 
@@ -226,12 +226,6 @@ body {
   color: #495057;
   max-height: 200px;
   overflow-y: auto;
-}
-
-/* Error Section */
-.error-section {
-  border-left: 3px solid #dc2626;
-  padding-left: 12px;
 }
 
 .error-section .json-data {
