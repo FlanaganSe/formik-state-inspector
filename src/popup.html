@@ -10,7 +10,10 @@
   <div class="container">
     <header class="header">
       <h1 class="title">Formik Inspector</h1>
-      <button class="refresh-btn" id="refreshBtn" title="Refresh">⟳</button>
+      <div class="actions">
+        <input id="searchInput" class="search-input" type="search" placeholder="Filter keys/values" aria-label="Filter" />
+        <button class="refresh-btn" id="refreshBtn" title="Refresh">⟳</button>
+      </div>
     </header>
 
     <div class="status" id="status">Scanning...</div>

@@ -13,6 +13,7 @@
   }
 
   let currentForms = [];
+  let pushSubscribed = false;
 
   const safeSendMessage = (message) => {
     if (!isContextValid()) return;
@@ -35,6 +36,11 @@
       const forms = event.data?.forms;
       currentForms = Array.isArray(forms) ? forms : [];
       safeSendMessage({ type: "update-badge", count: currentForms.length });
+
+      // If popup subscribed, push full forms to it for live updates
+      if (pushSubscribed && currentForms.length >= 0) {
+        safeSendMessage({ type: "forms-push", forms: currentForms });
+      }
     }
   });
 
@@ -56,6 +62,19 @@
           },
           window.location.origin
         );
+        return;
+      }
+
+      if (message.type === "subscribe-updates") {
+        pushSubscribed = true;
+        sendResponse({ ok: true });
+        return;
+      }
+
+      if (message.type === "unsubscribe-updates") {
+        pushSubscribed = false;
+        sendResponse({ ok: true });
+        return;
       }
     });
   }

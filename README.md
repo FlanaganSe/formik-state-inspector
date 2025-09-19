@@ -6,11 +6,14 @@ A lightweight Chrome extension for real-time inspection of Formik form state in 
 
 ## Features
 
-- **Real-time updates** on every React render
+- **Real-time updates** in the popup as your app re-renders
 - **Multi-form support** - inspect all Formik instances on a page
 - **Complete state view** - values, errors, touched fields, and status flags
+- **Collapsible sections** for Values, Errors, and Touched (large sections auto-collapse)
+- **Inline search** to filter keys/values across sections
 - **One-click JSON copy** for any state object
 - **Badge counter** showing detected forms
+- **Larger popup** (650×700) for better readability
 - **100% private** - no network requests, all data stays local
 
 ## Requirements
@@ -30,9 +33,11 @@ A lightweight Chrome extension for real-time inspection of Formik form state in 
 
 1. Navigate to a page with React and Formik forms
 2. Click the Formik Inspector icon in your toolbar
-3. View form state in the popup
-4. Use **Copy** buttons to export JSON data
-5. Click **⟳** to manually refresh
+3. View form state in the popup (it updates live while open)
+4. Use the search bar to filter keys/values across sections
+5. Collapse sections to focus on what matters
+6. Use **Copy** buttons to export JSON data
+7. Click **⟳** to manually refresh if needed
 
 ## How It Works
 
@@ -73,14 +78,10 @@ The extension includes comprehensive defensive coding:
 3. Reload extension in `chrome://extensions/`
 4. Refresh target pages to update content scripts
 
-## Future Enhancements
+## Notes
 
-Production-readiness improvements prioritized by impact and ease of implementation.
-
-**Collapsible JSON Sections**
-- **What**: Expand/collapse values, errors, touched
-- **Why**: Large form objects are hard to read
-- **Impact**: Better scalability
+- The popup now subscribes to live updates from the page while it is open. When closed, it automatically unsubscribes.
+- Search is non-destructive: it filters the displayed JSON (keeping matching paths) without modifying underlying data.
 
 
 ## Privacy

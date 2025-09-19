@@ -9,8 +9,8 @@ body {
   font-size: 14px;
   color: #333;
   background: #fafafa;
-  width: 500px;
-  max-height: 600px;
+  width: 650px;
+  max-height: 700px;
 }
 
 .container {
@@ -35,6 +35,28 @@ body {
   font-size: 18px;
   font-weight: 600;
   color: #2563eb;
+}
+
+.actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.search-input {
+  width: 260px;
+  max-width: 50vw;
+  padding: 8px 10px;
+  border: 1px solid #e0e0e0;
+  border-radius: 6px;
+  background: #fafafa;
+  outline: none;
+  font-size: 13px;
+}
+
+.search-input:focus {
+  border-color: #2563eb;
+  background: #fff;
 }
 
 .refresh-btn {
@@ -173,6 +195,21 @@ body {
   background: #1d4ed8;
 }
 
+.toggle-btn {
+  background: transparent;
+  border: 1px solid #e5e7eb;
+  border-radius: 4px;
+  padding: 2px 6px;
+  font-size: 11px;
+  cursor: pointer;
+  color: #374151;
+  margin-right: 6px;
+}
+
+.toggle-btn:hover {
+  background: #f3f4f6;
+}
+
 .json-data {
   background: #f8f9fa;
   border: 1px solid #e9ecef;
@@ -186,6 +223,10 @@ body {
   color: #495057;
   max-height: 200px;
   overflow-y: auto;
+}
+
+.form-section.collapsed .json-data {
+  display: none;
 }
 
 /* Error Section */

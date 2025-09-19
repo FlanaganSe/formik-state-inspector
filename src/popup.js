@@ -3,8 +3,11 @@ const status = $("status");
 const emptyState = $("emptyState");
 const formsList = $("formsList");
 const refreshBtn = $("refreshBtn");
+const searchInput = $("searchInput");
 
 let currentTab;
+let latestForms = [];
+let currentQuery = "";
 
 // Verify DOM elements exist
 if (!status || !emptyState || !formsList || !refreshBtn) {
@@ -13,6 +16,53 @@ if (!status || !emptyState || !formsList || !refreshBtn) {
       "<div style='padding: 20px; text-align: center; color: #dc2626;'>Extension UI failed to load</div>";
   }
   throw new Error("Required DOM elements not found");
+}
+
+function normalizeQuery(q) {
+  return String(q || "").toLowerCase().trim();
+}
+
+function deepFilter(obj, query) {
+  const q = normalizeQuery(query);
+  if (!q) return obj;
+
+  const visit = (value, keyPath) => {
+    if (value == null) return null;
+    const type = typeof value;
+
+    // Match by key path or primitive value
+    const keyStr = keyPath.join(".").toLowerCase();
+    if (keyStr.includes(q)) return value;
+    if (type !== "object") {
+      try {
+        return String(value).toLowerCase().includes(q) ? value : null;
+      } catch {
+        return null;
+      }
+    }
+
+    // Arrays
+    if (Array.isArray(value)) {
+      const next = [];
+      for (let i = 0; i < value.length; i++) {
+        const child = visit(value[i], keyPath.concat(String(i)));
+        if (child !== null) next.push(child);
+      }
+      return next.length ? next : null;
+    }
+
+    // Objects
+    const out = {};
+    for (const k in value) {
+      if (!Object.prototype.hasOwnProperty.call(value, k)) continue;
+      const child = visit(value[k], keyPath.concat(k));
+      if (child !== null) out[k] = child;
+    }
+    return Object.keys(out).length ? out : null;
+  };
+
+  const result = visit(obj, []);
+  return result ?? (Array.isArray(obj) ? [] : {});
 }
 
 function setStatus(text, className = "") {
@@ -39,9 +89,21 @@ function createFormSection(title, data, type) {
   const header = document.createElement("div");
   header.className = "section-header";
 
+  const left = document.createElement("div");
+  left.style.display = "flex";
+  left.style.alignItems = "center";
+
+  const toggleBtn = document.createElement("button");
+  toggleBtn.className = "toggle-btn";
+  toggleBtn.type = "button";
+  toggleBtn.textContent = "▾";
+  toggleBtn.setAttribute("aria-expanded", "true");
+
   const titleElement = document.createElement("strong");
   titleElement.textContent = title;
-  header.appendChild(titleElement);
+  left.appendChild(toggleBtn);
+  left.appendChild(titleElement);
+  header.appendChild(left);
 
   const copyBtn = document.createElement("button");
   copyBtn.className = "copy-btn";
@@ -55,6 +117,26 @@ function createFormSection(title, data, type) {
   pre.className = "json-data";
   pre.textContent = JSON.stringify(data, null, 2);
   section.appendChild(pre);
+
+  // Toggle collapse
+  const toggle = () => {
+    const isCollapsed = section.classList.toggle("collapsed");
+    toggleBtn.textContent = isCollapsed ? "▸" : "▾";
+    toggleBtn.setAttribute("aria-expanded", String(!isCollapsed));
+  };
+  toggleBtn.addEventListener("click", toggle);
+  // Also allow clicking title to toggle
+  titleElement.style.cursor = "pointer";
+  titleElement.addEventListener("click", toggle);
+
+  // Auto-collapse very large sections
+  try {
+    if ((pre.textContent || "").length > 2000) {
+      section.classList.add("collapsed");
+      toggleBtn.textContent = "▸";
+      toggleBtn.setAttribute("aria-expanded", "false");
+    }
+  } catch {}
 
   return section;
 }
@@ -102,20 +184,34 @@ function createFormCard(form, index) {
 
   card.appendChild(header);
 
+  // Apply filter
+  const filteredValues = deepFilter(values, currentQuery);
+  const filteredErrors = deepFilter(errors, currentQuery);
+  const filteredTouched = deepFilter(touched, currentQuery);
+
   // Values section
-  const valuesSection = createFormSection("Values", values, "values");
-  card.appendChild(valuesSection);
+  const hasValues = filteredValues && (Array.isArray(filteredValues) ? filteredValues.length > 0 : Object.keys(filteredValues).length > 0);
+  if (hasValues || !normalizeQuery(currentQuery)) {
+    const valuesSection = createFormSection("Values", filteredValues, "values");
+    card.appendChild(valuesSection);
+  }
 
   // Errors section (only if there are errors)
   if (errorCount > 0) {
-    const errorsSection = createFormSection("Errors", errors, "errors");
-    errorsSection.classList.add("error-section");
-    card.appendChild(errorsSection);
+    const hasErrors = filteredErrors && (Array.isArray(filteredErrors) ? filteredErrors.length > 0 : Object.keys(filteredErrors).length > 0);
+    if (hasErrors || !normalizeQuery(currentQuery)) {
+      const errorsSection = createFormSection("Errors", filteredErrors, "errors");
+      errorsSection.classList.add("error-section");
+      card.appendChild(errorsSection);
+    }
   }
 
   // Touched section
-  const touchedSection = createFormSection("Touched", touched, "touched");
-  card.appendChild(touchedSection);
+  const hasTouched = filteredTouched && (Array.isArray(filteredTouched) ? filteredTouched.length > 0 : Object.keys(filteredTouched).length > 0);
+  if (hasTouched || !normalizeQuery(currentQuery)) {
+    const touchedSection = createFormSection("Touched", filteredTouched, "touched");
+    card.appendChild(touchedSection);
+  }
 
   // Add click listeners for copy buttons
   card.querySelectorAll(".copy-btn").forEach((btn) => {
@@ -190,7 +286,8 @@ function createFormsSignature(forms) {
 
     signature += `|${valuesKeys}:${errorsKeys}:${touchedKeys}:${flags}`;
   }
-  return signature;
+  // include query in signature so search triggers re-render
+  return signature + `|q:${normalizeQuery(currentQuery)}`;
 }
 
 function renderForms(forms) {
@@ -247,7 +344,11 @@ async function getForms() {
     const response = await chrome.tabs.sendMessage(currentTab.id, {
       type: "get-forms",
     });
-    renderForms(response?.forms || []);
+    latestForms = Array.isArray(response?.forms) ? response.forms : [];
+    renderForms(latestForms);
+
+    // subscribe for live updates while popup is open
+    try { await chrome.tabs.sendMessage(currentTab.id, { type: "subscribe-updates" }); } catch {}
   } catch (_error) {
     setStatus("Extension not loaded on this page", "error");
     showEmpty();
@@ -285,7 +386,8 @@ async function refresh() {
         const response = await chrome.tabs.sendMessage(currentTab.id, {
           type: "get-forms",
         });
-        renderForms(response?.forms || []);
+        latestForms = Array.isArray(response?.forms) ? response.forms : [];
+        renderForms(latestForms);
       } catch {
         setStatus("Refresh failed", "error");
         // Removed console logging for normal failure cases
@@ -305,5 +407,31 @@ async function refresh() {
 if (refreshBtn) {
   refreshBtn.addEventListener("click", refresh);
 }
+
+// Listen for live push updates
+chrome.runtime.onMessage.addListener((message, sender) => {
+  if (message?.type === "forms-push" && sender?.tab?.id === currentTab?.id) {
+    latestForms = Array.isArray(message.forms) ? message.forms : [];
+    renderForms(latestForms);
+  }
+});
+
+// Search handling (debounced)
+if (searchInput) {
+  let t;
+  searchInput.addEventListener("input", () => {
+    currentQuery = searchInput.value || "";
+    if (t) clearTimeout(t);
+    t = setTimeout(() => {
+      renderForms(latestForms);
+    }, 150);
+  });
+}
+
+window.addEventListener("beforeunload", async () => {
+  try {
+    if (currentTab?.id) await chrome.tabs.sendMessage(currentTab.id, { type: "unsubscribe-updates" });
+  } catch {}
+});
 
 document.addEventListener("DOMContentLoaded", getForms);
