@@ -4,6 +4,10 @@
   const HOOK = window.__REACT_DEVTOOLS_GLOBAL_HOOK__;
   window.__FORMIK_INSPECTOR_ACTIVE__ = true;
 
+  // Track last seen form count and bag signature by reference
+  let lastFormsCount = 0;
+  let prevSigs = new WeakMap();
+
   function getFormikBag(fiber) {
     try {
       if (!fiber || typeof fiber !== "object") return null;
@@ -89,41 +93,47 @@
     return forms;
   }
 
-  let lastFormsCount = 0;
-  let lastFormsSimpleHash = "";
-
-  // Simple hash function for basic change detection
-  function simpleHash(forms) {
-    if (!Array.isArray(forms) || forms.length === 0) return "";
-
-    let hash = forms.length.toString();
-    for (let i = 0; i < forms.length; i++) {
-      const bag = forms[i];
-      if (!bag || typeof bag !== "object") continue;
-
-      // Hash based on keys count and basic values
-      const valuesCount = bag.values ? Object.keys(bag.values).length : 0;
-      const errorsCount = bag.errors ? Object.keys(bag.errors).length : 0;
-      const touchedCount = bag.touched ? Object.keys(bag.touched).length : 0;
-      const flags = `${bag.isSubmitting}${bag.isValidating}${bag.dirty}`;
-
-      hash += `|${valuesCount}:${errorsCount}:${touchedCount}:${flags}`;
-    }
-    return hash;
-  }
+  // Change detection in this layer caused missed updates for value-only changes.
+  // We now emit on every commit and let the popup perform lightweight diffing.
 
   function scan() {
     try {
       const forms = findForms();
       if (!Array.isArray(forms)) return;
 
-      // Fast change detection first
-      const currentSimpleHash = simpleHash(forms);
-      const formsCountChanged = forms.length !== lastFormsCount;
+      // Determine if any form actually changed since last scan
+      let changed = forms.length !== lastFormsCount;
+      for (let i = 0; i < forms.length; i++) {
+        const bag = forms[i];
+        if (!bag || typeof bag !== "object") continue;
 
-      if (!formsCountChanged && currentSimpleHash === lastFormsSimpleHash) {
-        return; // No changes detected
+        const nextSig = {
+          v: bag.values,
+          e: bag.errors,
+          t: bag.touched,
+          s: Boolean(bag.isSubmitting),
+          a: Boolean(bag.isValidating),
+          d: Boolean(bag.dirty),
+          c: Number(bag.submitCount) || 0,
+        };
+        const prev = prevSigs.get(bag);
+        if (!prev) {
+          changed = true;
+        } else if (
+          prev.v !== nextSig.v ||
+          prev.e !== nextSig.e ||
+          prev.t !== nextSig.t ||
+          prev.s !== nextSig.s ||
+          prev.a !== nextSig.a ||
+          prev.d !== nextSig.d ||
+          prev.c !== nextSig.c
+        ) {
+          changed = true;
+        }
+        prevSigs.set(bag, nextSig);
       }
+
+      if (!changed) return;
 
       const serialized = forms
         .filter((bag) => bag && typeof bag === "object")
@@ -145,11 +155,6 @@
             submitCount: Number(bag.submitCount) || 0,
           };
         });
-
-      // Update tracking variables
-      lastFormsCount = forms.length;
-      lastFormsSimpleHash = currentSimpleHash;
-
       window.postMessage(
         {
           source: "formik-inspector",
@@ -158,14 +163,15 @@
         },
         window.location.origin
       );
+
+      lastFormsCount = forms.length;
     } catch {
       // Silent fail for robustness
     }
   }
 
   // Hook into React commits for automatic updates
-  let scanTimeout = null;
-  let isScanning = false;
+  let scheduled = false;
   const originalCommit = HOOK.onCommitFiberRoot;
   HOOK.onCommitFiberRoot = (...args) => {
     try {
@@ -173,15 +179,16 @@
         return originalCommit.apply(null, args);
       }
     } finally {
-      // Prevent overlapping scans
-      if (scanTimeout) clearTimeout(scanTimeout);
-      if (!isScanning) {
-        scanTimeout = setTimeout(() => {
-          isScanning = true;
-          scan();
-          isScanning = false;
-          scanTimeout = null;
-        }, 100);
+      // Schedule a single scan on the next frame to coalesce commits
+      if (!scheduled) {
+        scheduled = true;
+        requestAnimationFrame(() => {
+          try {
+            scan();
+          } finally {
+            scheduled = false;
+          }
+        });
       }
     }
   };
@@ -196,14 +203,10 @@
 
   // Cleanup function
   const cleanup = () => {
-    if (scanTimeout) {
-      clearTimeout(scanTimeout);
-      scanTimeout = null;
-    }
-    // Reset tracking variables
-    isScanning = false;
+    // Reset scheduling and restore hook
+    scheduled = false;
     lastFormsCount = 0;
-    lastFormsSimpleHash = "";
+    prevSigs = new WeakMap();
 
     // Restore the original hook unconditionally
     HOOK.onCommitFiberRoot = originalCommit;
@@ -215,6 +218,6 @@
   window.addEventListener("beforeunload", cleanup);
   window.addEventListener("pagehide", cleanup);
 
-  // Initial scan
-  setTimeout(scan, 300);
+  // Initial scan soon after injection
+  requestAnimationFrame(scan);
 })();
