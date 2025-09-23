@@ -412,3 +412,14 @@ if (clearSearchBtn && searchInput) {
 }
 
 document.addEventListener("DOMContentLoaded", getForms);
+
+// Live updates: listen for messages from the content script for the current tab
+chrome.runtime.onMessage.addListener((message, sender) => {
+  if (!message || message.type !== "forms-update") return;
+  // Only accept updates from the active tab this popup is inspecting
+  if (!currentTab?.id || !sender?.tab?.id || sender.tab.id !== currentTab.id) return;
+
+  const forms = Array.isArray(message.forms) ? message.forms : [];
+  // Force render on push updates to ensure value-only changes show
+  renderForms(forms, { force: true });
+});
