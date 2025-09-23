@@ -92,7 +92,53 @@
   let lastFormsCount = 0;
   let lastFormsSimpleHash = "";
 
-  // Simple hash function for basic change detection
+  // Create a stable, efficient hash for primitive content so updates to
+  // the same field (without key count changes) are detected.
+  function hashString(input) {
+    let h = 5381 >>> 0;
+    for (let i = 0; i < input.length; i++) {
+      h = ((h << 5) + h) ^ input.charCodeAt(i);
+      h >>>= 0;
+    }
+    return h.toString(36);
+  }
+
+  function primitiveSignature(value) {
+    const parts = [];
+
+    function walk(v) {
+      const t = typeof v;
+      if (v == null) {
+        parts.push("null");
+        return;
+      }
+      if (t === "string" || t === "number" || t === "boolean") {
+        parts.push(`${t}:${String(v)}`);
+        return;
+      }
+      if (Array.isArray(v)) {
+        parts.push("[");
+        for (let i = 0; i < v.length; i++) walk(v[i]);
+        parts.push("]");
+        return;
+      }
+      if (t === "object") {
+        parts.push("{");
+        const keys = Object.keys(v).sort();
+        for (let i = 0; i < keys.length; i++) {
+          const k = keys[i];
+          parts.push(k);
+          walk(v[k]);
+        }
+        parts.push("}");
+      }
+    }
+
+    walk(value);
+    return hashString(parts.join("|"));
+  }
+
+  // Content-aware hash for change detection
   function simpleHash(forms) {
     if (!Array.isArray(forms) || forms.length === 0) return "";
 
@@ -101,13 +147,22 @@
       const bag = forms[i];
       if (!bag || typeof bag !== "object") continue;
 
-      // Hash based on keys count and basic values
-      const valuesCount = bag.values ? Object.keys(bag.values).length : 0;
-      const errorsCount = bag.errors ? Object.keys(bag.errors).length : 0;
-      const touchedCount = bag.touched ? Object.keys(bag.touched).length : 0;
-      const flags = `${bag.isSubmitting}${bag.isValidating}${bag.dirty}`;
+      // Include key counts and primitive content signatures so same-field
+      // edits are detected without deep cloning.
+      const values = bag.values && typeof bag.values === "object" ? bag.values : {};
+      const errors = bag.errors && typeof bag.errors === "object" ? bag.errors : {};
+      const touched = bag.touched && typeof bag.touched === "object" ? bag.touched : {};
 
-      hash += `|${valuesCount}:${errorsCount}:${touchedCount}:${flags}`;
+      const valuesCount = Object.keys(values).length;
+      const errorsCount = Object.keys(errors).length;
+      const touchedCount = Object.keys(touched).length;
+      const flags = `${bag.isSubmitting}${bag.isValidating}${bag.dirty}${bag.submitCount}`;
+
+      const vSig = primitiveSignature(values);
+      const eSig = primitiveSignature(errors);
+      const tSig = primitiveSignature(touched);
+
+      hash += `|${valuesCount}:${vSig}:${errorsCount}:${eSig}:${touchedCount}:${tSig}:${flags}`;
     }
     return hash;
   }
@@ -121,9 +176,8 @@
       const currentSimpleHash = simpleHash(forms);
       const formsCountChanged = forms.length !== lastFormsCount;
 
-      if (!formsCountChanged && currentSimpleHash === lastFormsSimpleHash) {
-        return; // No changes detected
-      }
+      // Always emit to ensure popup stays live, even if structure didn't change
+      // (e.g., same-field edits). The debounce on commit keeps this efficient.
 
       const serialized = forms
         .filter((bag) => bag && typeof bag === "object")

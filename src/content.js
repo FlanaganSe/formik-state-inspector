@@ -35,6 +35,8 @@
       const forms = event.data?.forms;
       currentForms = Array.isArray(forms) ? forms : [];
       safeSendMessage({ type: "update-badge", count: currentForms.length });
+      // Forward forms to extension pages (e.g., popup) for live updates
+      safeSendMessage({ type: "forms-update", forms: currentForms });
     }
   });
 

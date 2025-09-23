@@ -178,6 +178,49 @@ let lastFormsSignature = "";
 let lastFormsRaw = [];
 let filterQuery = "";
 
+// Content-aware signature to detect updates to values/errors/touched primitives
+function hashString(input) {
+  let h = 5381 >>> 0;
+  for (let i = 0; i < input.length; i++) {
+    h = ((h << 5) + h) ^ input.charCodeAt(i);
+    h >>>= 0;
+  }
+  return h.toString(36);
+}
+
+function primitiveSignature(value) {
+  const parts = [];
+  function walk(v) {
+    const t = typeof v;
+    if (v == null) {
+      parts.push("null");
+      return;
+    }
+    if (t === "string" || t === "number" || t === "boolean") {
+      parts.push(`${t}:${String(v)}`);
+      return;
+    }
+    if (Array.isArray(v)) {
+      parts.push("[");
+      for (let i = 0; i < v.length; i++) walk(v[i]);
+      parts.push("]");
+      return;
+    }
+    if (t === "object") {
+      parts.push("{");
+      const keys = Object.keys(v).sort();
+      for (let i = 0; i < keys.length; i++) {
+        const k = keys[i];
+        parts.push(k);
+        walk(v[k]);
+      }
+      parts.push("}");
+    }
+  }
+  walk(value);
+  return hashString(parts.join("|"));
+}
+
 // Fast signature for change detection without full JSON stringify
 function createFormsSignature(forms) {
   if (!Array.isArray(forms) || forms.length === 0) return "";
@@ -187,12 +230,20 @@ function createFormsSignature(forms) {
     const form = forms[i];
     if (!form || typeof form !== "object") continue;
 
-    const valuesKeys = form.values ? Object.keys(form.values).length : 0;
-    const errorsKeys = form.errors ? Object.keys(form.errors).length : 0;
-    const touchedKeys = form.touched ? Object.keys(form.touched).length : 0;
+    const values = form.values && typeof form.values === "object" ? form.values : {};
+    const errors = form.errors && typeof form.errors === "object" ? form.errors : {};
+    const touched = form.touched && typeof form.touched === "object" ? form.touched : {};
+
+    const valuesKeys = Object.keys(values).length;
+    const errorsKeys = Object.keys(errors).length;
+    const touchedKeys = Object.keys(touched).length;
     const flags = `${form.isSubmitting}${form.isValidating}${form.dirty}${form.submitCount}`;
 
-    signature += `|${valuesKeys}:${errorsKeys}:${touchedKeys}:${flags}`;
+    const vSig = primitiveSignature(values);
+    const eSig = primitiveSignature(errors);
+    const tSig = primitiveSignature(touched);
+
+    signature += `|${valuesKeys}:${vSig}:${errorsKeys}:${eSig}:${touchedKeys}:${tSig}:${flags}`;
   }
   return signature;
 }
@@ -402,13 +453,26 @@ if (searchInput) {
   });
 }
 
-if (clearSearchBtn && searchInput) {
-  clearSearchBtn.addEventListener("click", () => {
-    if (!filterQuery) return;
-    filterQuery = "";
-    searchInput.value = "";
-    renderForms(lastFormsRaw || [], { force: true });
-  });
-}
+  if (clearSearchBtn && searchInput) {
+    clearSearchBtn.addEventListener("click", () => {
+      if (!filterQuery) return;
+      filterQuery = "";
+      searchInput.value = "";
+      renderForms(lastFormsRaw || [], { force: true });
+    });
+  }
 
 document.addEventListener("DOMContentLoaded", getForms);
+
+// Live updates: receive forwarded forms from content script
+try {
+  chrome.runtime.onMessage.addListener((message) => {
+    if (message?.type === "forms-update" && Array.isArray(message.forms)) {
+      lastFormsRaw = message.forms;
+      // Force re-render on inbound live updates to avoid any gating mishaps
+      renderForms(message.forms, { force: true });
+    }
+  });
+} catch {
+  // Ignore if runtime messaging is unavailable in this context
+}
