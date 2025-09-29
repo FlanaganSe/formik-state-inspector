@@ -412,3 +412,17 @@ if (clearSearchBtn && searchInput) {
 }
 
 document.addEventListener("DOMContentLoaded", getForms);
+
+// Live updates while popup is open
+if (chrome?.runtime?.onMessage) {
+  chrome.runtime.onMessage.addListener((message, sender) => {
+    if (!message?.type || !sender?.tab?.id) return;
+    if (!currentTab?.id || sender.tab.id !== currentTab.id) return;
+
+    if (message.type === "forms-update") {
+      const forms = Array.isArray(message.forms) ? message.forms : [];
+      // Force render to reflect same-field changes
+      renderForms(forms, { force: true });
+    }
+  });
+}

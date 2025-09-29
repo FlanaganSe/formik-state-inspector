@@ -89,41 +89,14 @@
     return forms;
   }
 
-  let lastFormsCount = 0;
-  let lastFormsSimpleHash = "";
-
-  // Simple hash function for basic change detection
-  function simpleHash(forms) {
-    if (!Array.isArray(forms) || forms.length === 0) return "";
-
-    let hash = forms.length.toString();
-    for (let i = 0; i < forms.length; i++) {
-      const bag = forms[i];
-      if (!bag || typeof bag !== "object") continue;
-
-      // Hash based on keys count and basic values
-      const valuesCount = bag.values ? Object.keys(bag.values).length : 0;
-      const errorsCount = bag.errors ? Object.keys(bag.errors).length : 0;
-      const touchedCount = bag.touched ? Object.keys(bag.touched).length : 0;
-      const flags = `${bag.isSubmitting}${bag.isValidating}${bag.dirty}`;
-
-      hash += `|${valuesCount}:${errorsCount}:${touchedCount}:${flags}`;
-    }
-    return hash;
-  }
+  // We intentionally avoid coarse change detection here because
+  // Formik updates often change values without changing key counts/flags.
+  // Posting on every commit (debounced) ensures live, accurate state.
 
   function scan() {
     try {
       const forms = findForms();
       if (!Array.isArray(forms)) return;
-
-      // Fast change detection first
-      const currentSimpleHash = simpleHash(forms);
-      const formsCountChanged = forms.length !== lastFormsCount;
-
-      if (!formsCountChanged && currentSimpleHash === lastFormsSimpleHash) {
-        return; // No changes detected
-      }
 
       const serialized = forms
         .filter((bag) => bag && typeof bag === "object")
@@ -145,10 +118,6 @@
             submitCount: Number(bag.submitCount) || 0,
           };
         });
-
-      // Update tracking variables
-      lastFormsCount = forms.length;
-      lastFormsSimpleHash = currentSimpleHash;
 
       window.postMessage(
         {
@@ -200,10 +169,8 @@
       clearTimeout(scanTimeout);
       scanTimeout = null;
     }
-    // Reset tracking variables
+    // Reset scanning state
     isScanning = false;
-    lastFormsCount = 0;
-    lastFormsSimpleHash = "";
 
     // Restore the original hook unconditionally
     HOOK.onCommitFiberRoot = originalCommit;
