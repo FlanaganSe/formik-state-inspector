@@ -34,9 +34,7 @@
     if (event.data.type === "forms-update") {
       const forms = event.data?.forms;
       currentForms = Array.isArray(forms) ? forms : [];
-      // Update badge and broadcast to popup for live updates
       safeSendMessage({ type: "update-badge", count: currentForms.length });
-      safeSendMessage({ type: "forms-update", forms: currentForms });
     }
   });
 
