@@ -8,26 +8,28 @@
 </head>
 <body>
   <div class="container">
+    <!-- Header -->
     <header class="header">
-      <h1 class="title">Formik Inspector</h1>
-      <div class="search">
-        <input id="searchInput" class="search-input" type="text" placeholder="Filter fields and values..." aria-label="Filter" />
-        <button class="clear-btn" id="clearSearchBtn" title="Clear filter" aria-label="Clear filter">✕</button>
+      <h1>Formik Inspector</h1>
+      <div class="search-bar">
+        <input id="search" type="text" placeholder="Filter fields..." aria-label="Search">
+        <button id="clear" title="Clear" aria-label="Clear">✕</button>
       </div>
-      <button class="refresh-btn" id="refreshBtn" title="Refresh">⟳</button>
+      <button id="refresh" title="Refresh" aria-label="Refresh">⟳</button>
     </header>
 
-    <div class="status" id="status">Scanning...</div>
+    <!-- Status -->
+    <div id="status" class="status">Scanning...</div>
 
-    <main class="content" id="content">
-      <div class="empty-state" id="emptyState">
-        <div class="empty-icon">📝</div>
-        <h3>No Formik forms found</h3>
-        <p>Make sure you're on a page with React and Formik forms.</p>
-      </div>
+    <!-- Empty State -->
+    <div id="empty" class="empty-state">
+      <div class="empty-icon">📝</div>
+      <h3>No Formik forms found</h3>
+      <p>Make sure you're on a page with React and Formik.</p>
+    </div>
 
-      <div class="forms-list" id="formsList"></div>
-    </main>
+    <!-- Forms List -->
+    <div id="forms" class="forms-container hidden"></div>
   </div>
 
   <script src="popup.js"></script>
