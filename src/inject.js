@@ -1,187 +1,98 @@
 (() => {
-  if (window.__FORMIK_INSPECTOR_ACTIVE__ || !window.__REACT_DEVTOOLS_GLOBAL_HOOK__) return;
+  // Prevent double initialization
+  if (window.__FORMIK_INSPECTOR__ || !window.__REACT_DEVTOOLS_GLOBAL_HOOK__) return;
 
-  const HOOK = window.__REACT_DEVTOOLS_GLOBAL_HOOK__;
-  window.__FORMIK_INSPECTOR_ACTIVE__ = true;
+  const hook = window.__REACT_DEVTOOLS_GLOBAL_HOOK__;
+  window.__FORMIK_INSPECTOR__ = true;
 
-  function getFormikBag(fiber) {
-    try {
-      if (!fiber || typeof fiber !== "object") return null;
+  // Check if fiber node contains Formik bag
+  const extractFormikBag = (fiber) => {
+    if (!fiber?.memoizedProps?.value) return null;
 
-      const props = fiber.memoizedProps;
-      if (!props || typeof props !== "object") return null;
+    const bag = fiber.memoizedProps.value;
 
-      const bag = props.value;
-      if (!bag || typeof bag !== "object") return null;
+    // Must have values object
+    if (!bag?.values || typeof bag.values !== 'object') return null;
 
-      // Must have values property
-      if (!("values" in bag) || typeof bag.values !== "object") return null;
+    // Check Formik name or shape
+    const hasFormikName = /Formik/i.test(fiber.type?.name || fiber.type?._context?.displayName || '');
+    const hasFormikShape = 'errors' in bag && 'touched' in bag && 'isSubmitting' in bag;
 
-      const type = fiber.type;
-      let hasFormikName = false;
-      let hasFormikShape = false;
+    return (hasFormikName || hasFormikShape) ? bag : null;
+  };
 
-      // Safe type checking
-      try {
-        const typeName = type?.name || type?._context?.displayName || "";
-        hasFormikName = typeof typeName === "string" && /Formik/i.test(typeName);
-      } catch {
-        hasFormikName = false;
-      }
-
-      // Check for Formik-like shape with proper type checking
-      hasFormikShape =
-        "errors" in bag &&
-        "touched" in bag &&
-        "isSubmitting" in bag &&
-        (typeof bag.errors === "object" || bag.errors == null) &&
-        (typeof bag.touched === "object" || bag.touched == null) &&
-        typeof bag.isSubmitting === "boolean";
-
-      return hasFormikName || hasFormikShape ? bag : null;
-    } catch {
-      return null;
-    }
-  }
-
-  function findForms() {
+  // Traverse React fiber tree to find all Formik instances
+  const findFormikInstances = () => {
     const forms = [];
-    const roots = new Set();
     const seen = new WeakSet();
-    let totalIterations = 0;
-    const MAX_TOTAL_ITERATIONS = 50000;
 
-    try {
-      if (HOOK.renderers && typeof HOOK.renderers.forEach === "function") {
-        HOOK.renderers.forEach((_, id) => {
-          const fiberRoots = HOOK.getFiberRoots?.(id);
-          if (fiberRoots && typeof fiberRoots.forEach === "function") {
-            fiberRoots.forEach((root) => {
-              if (root?.current) roots.add(root.current);
-            });
-          }
-        });
-      }
+    // Get all React roots from DevTools hook
+    hook.renderers?.forEach((_, id) => {
+      hook.getFiberRoots?.(id)?.forEach(root => {
+        if (!root?.current) return;
 
-      for (const root of roots) {
-        if (!root) continue;
-        const queue = [root];
-        let iterations = 0;
-        const MAX_ITERATIONS = 10000;
-
-        while (queue.length > 0 && iterations < MAX_ITERATIONS && totalIterations < MAX_TOTAL_ITERATIONS) {
+        const queue = [root.current];
+        while (queue.length) {
           const fiber = queue.shift();
           if (!fiber || seen.has(fiber)) continue;
           seen.add(fiber);
-          iterations++;
-          totalIterations++;
 
-          const bag = getFormikBag(fiber);
+          const bag = extractFormikBag(fiber);
           if (bag) forms.push(bag);
 
           if (fiber.child) queue.push(fiber.child);
           if (fiber.sibling) queue.push(fiber.sibling);
         }
-      }
-    } catch {
-      // Silent fail for robustness
-    }
+      });
+    });
+
     return forms;
-  }
-
-  // We intentionally avoid coarse change detection here because
-  // Formik updates often change values without changing key counts/flags.
-  // Posting on every commit (debounced) ensures live, accurate state.
-
-  function scan() {
-    try {
-      const forms = findForms();
-      if (!Array.isArray(forms)) return;
-
-      const serialized = forms
-        .filter((bag) => bag && typeof bag === "object")
-        .map((bag, i) => {
-          // Defensive data extraction with type checking
-          const safeValues = bag.values && typeof bag.values === "object" ? bag.values : {};
-          const safeErrors = bag.errors && typeof bag.errors === "object" ? bag.errors : {};
-          const safeTouched = bag.touched && typeof bag.touched === "object" ? bag.touched : {};
-
-          return {
-            id: `form-${i}`,
-            values: safeValues,
-            errors: safeErrors,
-            touched: safeTouched,
-            isSubmitting: Boolean(bag.isSubmitting),
-            isValidating: Boolean(bag.isValidating),
-            isValid: bag.isValid !== false, // Default to true if undefined
-            dirty: Boolean(bag.dirty),
-            submitCount: Number(bag.submitCount) || 0,
-          };
-        });
-
-      window.postMessage(
-        {
-          source: "formik-inspector",
-          type: "forms-update",
-          forms: serialized,
-        },
-        window.location.origin
-      );
-    } catch {
-      // Silent fail for robustness
-    }
-  }
-
-  // Hook into React commits for automatic updates
-  let scanTimeout = null;
-  let isScanning = false;
-  const originalCommit = HOOK.onCommitFiberRoot;
-  HOOK.onCommitFiberRoot = (...args) => {
-    try {
-      if (typeof originalCommit === "function") {
-        return originalCommit.apply(null, args);
-      }
-    } finally {
-      // Prevent overlapping scans
-      if (scanTimeout) clearTimeout(scanTimeout);
-      if (!isScanning) {
-        scanTimeout = setTimeout(() => {
-          isScanning = true;
-          scan();
-          isScanning = false;
-          scanTimeout = null;
-        }, 100);
-      }
-    }
   };
 
-  // Listen for manual refresh requests
-  const messageHandler = (event) => {
-    if (event?.data?.source === "formik-inspector" && event.data.type === "refresh-request") {
-      scan();
-    }
-  };
-  window.addEventListener("message", messageHandler);
+  // Send forms data to extension
+  const sendUpdate = () => {
+    const forms = findFormikInstances().map((bag, i) => ({
+      id: `form-${i}`,
+      values: bag.values ?? {},
+      errors: bag.errors ?? {},
+      touched: bag.touched ?? {},
+      isSubmitting: bag.isSubmitting ?? false,
+      isValidating: bag.isValidating ?? false,
+      isValid: bag.isValid ?? true,
+      dirty: bag.dirty ?? false,
+      submitCount: bag.submitCount ?? 0,
+    }));
 
-  // Cleanup function
-  const cleanup = () => {
-    if (scanTimeout) {
-      clearTimeout(scanTimeout);
-      scanTimeout = null;
-    }
-    // Reset scanning state
-    isScanning = false;
-
-    // Restore the original hook unconditionally
-    HOOK.onCommitFiberRoot = originalCommit;
-    window.removeEventListener("message", messageHandler);
-    window.__FORMIK_INSPECTOR_ACTIVE__ = false;
+    window.postMessage(
+      { source: 'formik-inspector', type: 'update', forms },
+      window.location.origin
+    );
   };
 
-  // Listen for page unload or extension disable
-  window.addEventListener("beforeunload", cleanup);
-  window.addEventListener("pagehide", cleanup);
+  // Debounced scan on React commit
+  let timeout = null;
+  const originalCommit = hook.onCommitFiberRoot;
+
+  hook.onCommitFiberRoot = (...args) => {
+    originalCommit?.apply(null, args);
+    clearTimeout(timeout);
+    timeout = setTimeout(sendUpdate, 100);
+  };
+
+  // Listen for manual refresh
+  window.addEventListener('message', (e) => {
+    if (e.source === window && e.data?.source === 'formik-inspector' && e.data?.type === 'refresh') {
+      sendUpdate();
+    }
+  });
+
+  // Cleanup
+  window.addEventListener('beforeunload', () => {
+    clearTimeout(timeout);
+    hook.onCommitFiberRoot = originalCommit;
+    delete window.__FORMIK_INSPECTOR__;
+  });
 
   // Initial scan
-  setTimeout(scan, 300);
+  setTimeout(sendUpdate, 300);
 })();
