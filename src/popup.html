@@ -8,7 +8,6 @@
 </head>
 <body>
   <div class="container">
-    <!-- Header -->
     <header class="header">
       <h1>Formik Inspector</h1>
       <div class="search-bar">
@@ -17,21 +16,14 @@
       </div>
       <button id="refresh" title="Refresh" aria-label="Refresh">⟳</button>
     </header>
-
-    <!-- Status -->
     <div id="status" class="status">Scanning...</div>
-
-    <!-- Empty State -->
     <div id="empty" class="empty-state">
       <div class="empty-icon">📝</div>
       <h3>No Formik forms found</h3>
       <p>Make sure you're on a page with React and Formik.</p>
     </div>
-
-    <!-- Forms List -->
     <div id="forms" class="forms-container hidden"></div>
   </div>
-
   <script src="popup.js"></script>
 </body>
 </html>
