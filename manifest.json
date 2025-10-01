@@ -2,7 +2,7 @@
 	"manifest_version": 3,
 	"name": "Formik State Inspector",
 	"version": "1.1.0",
-	"description": "Inspect Formik form state in React applications with real-time updates, collapsible JSON tree view, and instant search. Simple, fast, and privacy-focused.",
+	"description": "Inspect Formik form state in React applications with real-time updates,JSON tree view, and instant search.",
 	"author": "Sean Flanagan",
 	"homepage_url": "https://github.com/FlanaganSe/formik-state-inspector",
 	"permissions": ["activeTab"],
