@@ -1,98 +1,91 @@
 (() => {
-  // Prevent double initialization
   if (window.__FORMIK_INSPECTOR__ || !window.__REACT_DEVTOOLS_GLOBAL_HOOK__) return;
 
   const hook = window.__REACT_DEVTOOLS_GLOBAL_HOOK__;
+  const MAX_DEPTH = 100;
+  const DEBOUNCE_MS = 100;
+  const INITIAL_DELAY_MS = 300;
+
   window.__FORMIK_INSPECTOR__ = true;
 
-  // Check if fiber node contains Formik bag
-  const extractFormikBag = (fiber) => {
-    if (!fiber?.memoizedProps?.value) return null;
-
-    const bag = fiber.memoizedProps.value;
-
-    // Must have values object
+  const isFormik = (fiber) => {
+    const bag = fiber?.memoizedProps?.value;
     if (!bag?.values || typeof bag.values !== 'object') return null;
 
-    // Check Formik name or shape
-    const hasFormikName = /Formik/i.test(fiber.type?.name || fiber.type?._context?.displayName || '');
-    const hasFormikShape = 'errors' in bag && 'touched' in bag && 'isSubmitting' in bag;
+    const hasName = /Formik/i.test(fiber.type?.name || fiber.type?._context?.displayName || '');
+    const hasShape = ['errors', 'touched', 'isSubmitting'].every(k => k in bag);
 
-    return (hasFormikName || hasFormikShape) ? bag : null;
+    return hasName || hasShape ? bag : null;
   };
 
-  // Traverse React fiber tree to find all Formik instances
-  const findFormikInstances = () => {
-    const forms = [];
-    const seen = new WeakSet();
+  // Extract serializable snapshot of Formik state
+  const snapshot = (bag) => ({
+    values: bag.values ?? {},
+    errors: bag.errors ?? {},
+    touched: bag.touched ?? {},
+    isSubmitting: !!bag.isSubmitting,
+    isValidating: !!bag.isValidating,
+    dirty: !!bag.dirty
+  });
 
-    // Get all React roots from DevTools hook
+  const findForms = () => {
+    const forms = [];
+    const seenFibers = new WeakSet();
+    const seenBags = new WeakSet();
+
     hook.renderers?.forEach((_, id) => {
       hook.getFiberRoots?.(id)?.forEach(root => {
         if (!root?.current) return;
 
-        const queue = [root.current];
-        while (queue.length) {
-          const fiber = queue.shift();
-          if (!fiber || seen.has(fiber)) continue;
-          seen.add(fiber);
+        // Use index-based iteration for O(1) queue operations
+        const queue = [{ fiber: root.current, depth: 0 }];
+        for (let i = 0; i < queue.length; i++) {
+          const { fiber, depth } = queue[i];
 
-          const bag = extractFormikBag(fiber);
-          if (bag) forms.push(bag);
+          if (!fiber || seenFibers.has(fiber) || depth > MAX_DEPTH) continue;
+          seenFibers.add(fiber);
 
-          if (fiber.child) queue.push(fiber.child);
-          if (fiber.sibling) queue.push(fiber.sibling);
+          const bag = isFormik(fiber);
+          if (bag && !seenBags.has(bag)) {
+            seenBags.add(bag);
+            forms.push(bag);
+          }
+
+          if (fiber.child) queue.push({ fiber: fiber.child, depth: depth + 1 });
+          if (fiber.sibling) queue.push({ fiber: fiber.sibling, depth });
         }
       });
     });
 
-    return forms;
+    // Map to minimal serializable snapshots
+    return forms.map(snapshot);
   };
 
-  // Send forms data to extension
-  const sendUpdate = () => {
-    const forms = findFormikInstances().map((bag, i) => ({
-      id: `form-${i}`,
-      values: bag.values ?? {},
-      errors: bag.errors ?? {},
-      touched: bag.touched ?? {},
-      isSubmitting: bag.isSubmitting ?? false,
-      isValidating: bag.isValidating ?? false,
-      isValid: bag.isValid ?? true,
-      dirty: bag.dirty ?? false,
-      submitCount: bag.submitCount ?? 0,
-    }));
-
-    window.postMessage(
-      { source: 'formik-inspector', type: 'update', forms },
-      window.location.origin
-    );
+  const send = () => {
+    try {
+      const forms = findForms();
+      window.postMessage({ source: 'formik-inspector', type: 'update', forms }, '*');
+    } catch (_) {
+      // Swallow errors to avoid breaking React DevTools hook
+    }
   };
 
-  // Debounced scan on React commit
-  let timeout = null;
-  const originalCommit = hook.onCommitFiberRoot;
+  let timer;
+  const originalHook = hook.onCommitFiberRoot;
 
   hook.onCommitFiberRoot = (...args) => {
-    originalCommit?.apply(null, args);
-    clearTimeout(timeout);
-    timeout = setTimeout(sendUpdate, 100);
+    originalHook?.apply(null, args);
+    clearTimeout(timer);
+    timer = setTimeout(send, DEBOUNCE_MS);
   };
 
-  // Listen for manual refresh
-  window.addEventListener('message', (e) => {
-    if (e.source === window && e.data?.source === 'formik-inspector' && e.data?.type === 'refresh') {
-      sendUpdate();
-    }
-  });
-
-  // Cleanup
-  window.addEventListener('beforeunload', () => {
-    clearTimeout(timeout);
-    hook.onCommitFiberRoot = originalCommit;
+  const cleanup = () => {
+    clearTimeout(timer);
+    if (originalHook) hook.onCommitFiberRoot = originalHook;
     delete window.__FORMIK_INSPECTOR__;
-  });
+  };
 
-  // Initial scan
-  setTimeout(sendUpdate, 300);
+  window.addEventListener('beforeunload', cleanup, { once: true });
+
+  setTimeout(send, INITIAL_DELAY_MS);
 })();

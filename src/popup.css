@@ -1,4 +1,6 @@
-* {
+*,
+*::before,
+*::after {
   box-sizing: border-box;
   margin: 0;
   padding: 0;
@@ -19,10 +21,6 @@ body {
   flex-direction: column;
   height: 100vh;
 }
-
-/* ============================================================================
-   Header
-   ============================================================================ */
 
 .header {
   display: flex;
@@ -63,8 +61,7 @@ body {
   box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
 }
 
-.search-bar button,
-.header > button {
+.search-bar button {
   height: 32px;
   padding: 0 10px;
   border: 1px solid #d1d5db;
@@ -76,16 +73,11 @@ body {
   font-size: 14px;
 }
 
-.search-bar button:hover,
-.header > button:hover {
+.search-bar button:hover {
   background: #f3f4f6;
   border-color: #2563eb;
   color: #2563eb;
 }
-
-/* ============================================================================
-   Status Bar
-   ============================================================================ */
 
 .status {
   padding: 10px 16px;
@@ -111,10 +103,6 @@ body {
   color: #9ca3af;
 }
 
-/* ============================================================================
-   Empty State
-   ============================================================================ */
-
 .empty-state {
   display: flex;
   flex-direction: column;
@@ -124,7 +112,8 @@ body {
   text-align: center;
 }
 
-.empty-state.hidden {
+.empty-state.hidden,
+.forms-container.hidden {
   display: none;
 }
 
@@ -146,23 +135,11 @@ body {
   color: #6b7280;
 }
 
-/* ============================================================================
-   Forms Container
-   ============================================================================ */
-
 .forms-container {
   flex: 1;
   overflow-y: auto;
   padding: 16px;
 }
-
-.forms-container.hidden {
-  display: none;
-}
-
-/* ============================================================================
-   Form Card
-   ============================================================================ */
 
 .form-card {
   background: #fff;
@@ -201,10 +178,6 @@ body {
   color: #2563eb;
 }
 
-/* ============================================================================
-   Form Section
-   ============================================================================ */
-
 .form-section {
   margin-bottom: 16px;
 }
@@ -242,6 +215,11 @@ body {
   background: #1d4ed8;
 }
 
+.copy-btn:focus {
+  outline: 2px solid #2563eb;
+  outline-offset: 2px;
+}
+
 .copy-btn.success {
   background: #059669;
 }
@@ -253,10 +231,6 @@ body {
 .error-section .section-header strong {
   color: #dc2626;
 }
-
-/* ============================================================================
-   Native JSON Tree
-   ============================================================================ */
 
 .json-tree {
   background: #f9fafb;
@@ -278,10 +252,18 @@ body {
   user-select: none;
   color: #6b7280;
   margin-right: 2px;
+  display: inline-block;
+  min-width: 14px;
 }
 
 .tree-toggle:hover {
   color: #2563eb;
+}
+
+.tree-toggle:focus {
+  outline: 2px solid #2563eb;
+  outline-offset: 2px;
+  border-radius: 2px;
 }
 
 .tree-key {
@@ -289,10 +271,7 @@ body {
   font-weight: 500;
 }
 
-.tree-punctuation {
-  color: #6b7280;
-}
-
+.tree-punctuation,
 .tree-comma {
   color: #6b7280;
 }
@@ -314,6 +293,7 @@ body {
   font-weight: 500;
 }
 
+.tree-value.tree-null,
 .tree-value.tree-undefined,
 .tree-value.tree-object {
   color: #9ca3af;
@@ -322,21 +302,13 @@ body {
 
 .tree-children {
   display: block;
-  margin-left: 1em; /* 2-space equivalent in monospace */
+  margin-left: 1em;
 }
-
-/* ============================================================================
-   Error Section Styling
-   ============================================================================ */
 
 .error-section .json-tree {
   background: #fef2f2;
   border-color: #fecaca;
 }
-
-/* ============================================================================
-   Scrollbar
-   ============================================================================ */
 
 ::-webkit-scrollbar {
   width: 8px;

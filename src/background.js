@@ -1,14 +1,9 @@
-// Update badge count for detected forms
+// Update extension badge when forms are detected
 chrome.runtime.onMessage.addListener((msg, sender) => {
-  if (msg?.type === 'badge' && sender?.tab?.id && chrome.runtime?.id) {
-    const count = msg.count || 0;
-    chrome.action.setBadgeText({
-      tabId: sender.tab.id,
-      text: count > 0 ? String(count) : '',
-    });
-    chrome.action.setBadgeBackgroundColor({
-      tabId: sender.tab.id,
-      color: count > 0 ? '#2563eb' : '#6c757d',
-    });
+  if (msg?.type === 'update' && sender?.tab?.id) {
+    const { count = 0 } = msg;
+    const { id: tabId } = sender.tab;
+    chrome.action.setBadgeText({ tabId, text: count ? String(count) : '' });
+    if (count) chrome.action.setBadgeBackgroundColor({ tabId, color: '#2563eb' });
   }
 });

@@ -11,18 +11,17 @@
     <header class="header">
       <h1>Formik Inspector</h1>
       <div class="search-bar">
-        <input id="search" type="text" placeholder="Filter fields..." aria-label="Search">
-        <button id="clear" title="Clear" aria-label="Clear">✕</button>
+        <input id="search" type="text" placeholder="Filter fields..." autocomplete="off" aria-label="Search form fields">
+        <button id="clear" title="Clear search" aria-label="Clear search">✕</button>
       </div>
-      <button id="refresh" title="Refresh" aria-label="Refresh">⟳</button>
     </header>
-    <div id="status" class="status">Scanning...</div>
-    <div id="empty" class="empty-state">
-      <div class="empty-icon">📝</div>
+    <div id="status" class="status" role="status" aria-live="polite">Scanning...</div>
+    <div id="empty" class="empty-state" role="status">
+      <div class="empty-icon" aria-hidden="true">📝</div>
       <h3>No Formik forms found</h3>
       <p>Make sure you're on a page with React and Formik.</p>
     </div>
-    <div id="forms" class="forms-container hidden"></div>
+    <div id="forms" class="forms-container hidden" role="main"></div>
   </div>
   <script src="popup.js"></script>
 </body>

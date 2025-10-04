@@ -1,360 +1,247 @@
-// ============================================================================
-// Native JSON Tree Component
-// ============================================================================
+// DOM + utils
+const $ = (id) => document.getElementById(id);
+const isObj = (v) => v && typeof v === "object" && !Array.isArray(v);
+const isPrimitive = (v) => !isObj(v) && !Array.isArray(v);
+const esc = (s) =>
+  String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 
-const createTreeNode = (key, value, depth = 0, isLast = false, query = '') => {
-  const type = Array.isArray(value) ? 'array' : typeof value;
-  const isObject = type === 'object' || type === 'array';
-
-  // Filter check for query matching
-  const matchesQuery = !query ||
-    key?.toString().toLowerCase().includes(query) ||
-    (!isObject && String(value).toLowerCase().includes(query));
-
-  if (query && !matchesQuery && !isObject) return null;
-
-  const container = document.createElement('div');
-
-  if (isObject && value !== null) {
-    const entries = type === 'array' ? value.map((v, i) => [i, v]) : Object.entries(value);
-    const hasChildren = entries.length > 0;
-
-    if (hasChildren) {
-      // Header line: ▼ key: {
-      const header = document.createElement('div');
-      header.className = 'tree-line';
-
-      const toggle = document.createElement('span');
-      toggle.className = 'tree-toggle';
-      toggle.textContent = '▼ ';
-      header.appendChild(toggle);
-
-      const keySpan = document.createElement('span');
-      keySpan.className = 'tree-key';
-      keySpan.textContent = key;
-      header.appendChild(keySpan);
-
-      const punctuation = document.createElement('span');
-      punctuation.className = 'tree-punctuation';
-      punctuation.textContent = `: ${type === 'array' ? '[' : '{'}`;
-      header.appendChild(punctuation);
-
-      container.appendChild(header);
-
-      // Children container
-      const children = document.createElement('div');
-      children.className = 'tree-children';
-
-      let visibleChildren = 0;
-      entries.forEach(([k, v], i) => {
-        const child = createTreeNode(k, v, depth + 1, i === entries.length - 1, query);
-        if (child) {
-          children.appendChild(child);
-          visibleChildren++;
-        }
-      });
-
-      if (visibleChildren > 0 || !query) {
-        container.appendChild(children);
-
-        // Closing bracket line
-        const footer = document.createElement('div');
-        footer.className = 'tree-line';
-        footer.innerHTML = `<span class="tree-punctuation">${type === 'array' ? ']' : '}'}</span>${!isLast ? '<span class="tree-comma">,</span>' : ''}`;
-        container.appendChild(footer);
-
-        // Toggle collapse/expand
-        toggle.addEventListener('click', (e) => {
-          e.stopPropagation();
-          const isExpanded = toggle.textContent === '▼ ';
-          if (isExpanded) {
-            toggle.textContent = '▶ ';
-            children.style.display = 'none';
-            footer.style.display = 'none';
-            punctuation.textContent = `: ${type === 'array' ? '[...]' : '{...}'}`;
-          } else {
-            toggle.textContent = '▼ ';
-            children.style.display = 'block';
-            footer.style.display = 'block';
-            punctuation.textContent = `: ${type === 'array' ? '[' : '{'}`;
-          }
-        });
-      } else if (query) {
-        return null; // No matching children
-      }
-    } else {
-      // Empty object/array: key: {}
-      const line = document.createElement('div');
-      line.className = 'tree-line';
-      line.innerHTML = `<span class="tree-key">${key}</span><span class="tree-punctuation">: ${type === 'array' ? '[]' : '{}'}</span>${!isLast ? '<span class="tree-comma">,</span>' : ''}`;
-      container.appendChild(line);
-    }
-  } else {
-    // Primitive value: key: value,
-    const line = document.createElement('div');
-    line.className = 'tree-line';
-
-    const keySpan = document.createElement('span');
-    keySpan.className = 'tree-key';
-    keySpan.textContent = key;
-    line.appendChild(keySpan);
-
-    const colon = document.createElement('span');
-    colon.className = 'tree-punctuation';
-    colon.textContent = ': ';
-    line.appendChild(colon);
-
-    const valueSpan = document.createElement('span');
-    valueSpan.className = `tree-value tree-${type}`;
-    valueSpan.textContent = value === null ? 'null' :
-                           type === 'string' ? `"${value}"` :
-                           String(value);
-    line.appendChild(valueSpan);
-
-    if (!isLast) {
-      const comma = document.createElement('span');
-      comma.className = 'tree-comma';
-      comma.textContent = ',';
-      line.appendChild(comma);
-    }
-
-    container.appendChild(line);
-  }
-
-  return container;
+// Cache DOM refs (script is loaded after body)
+const els = {
+  forms: $("forms"),
+  empty: $("empty"),
+  status: $("status"),
+  search: $("search"),
+  clear: $("clear"),
 };
 
-const createTree = (data, query = '') => {
-  const tree = document.createElement('div');
-  tree.className = 'json-tree';
+// Count values with optional filter
+const count = (obj, fn = () => 1) => {
+  if (isPrimitive(obj)) return fn(obj);
+  let total = 0;
+  for (const v of Object.values(obj)) {
+    total += isPrimitive(v) ? fn(v) : count(v, fn);
+  }
+  return total;
+};
 
-  const entries = Object.entries(data);
-  entries.forEach(([key, value], i) => {
-    const node = createTreeNode(key, value, 0, i === entries.length - 1, query);
-    if (node) tree.appendChild(node);
-  });
+// Check if key/value matches search query
+const matches = (key, val, q) => {
+  if (!q) return true;
+  const lq = q.toLowerCase();
+  if (key?.toLowerCase().includes(lq)) return true;
+  if (isPrimitive(val)) return String(val).toLowerCase().includes(lq);
+  for (const [k, v] of Object.entries(val)) {
+    if (matches(k, v, q)) return true;
+  }
+  return false;
+};
 
+// Generate value markup based on type
+const getValueMarkup = (val) => {
+  if (val === null) return '<span class="tree-value tree-null">null</span>';
+  const type = typeof val;
+  if (type === "string") return `<span class="tree-value tree-string">"${esc(val)}"</span>`;
+  return `<span class="tree-value tree-${type}">${esc(String(val))}</span>`;
+};
+
+// Track collapsed nodes (persists across renders)
+const collapsed = new Set();
+
+// Build tree node recursively
+const buildNode = (key, val, isLast, q, path) => {
+  if (!matches(key, val, q)) return "";
+
+  const nodeId = path ? `${path}.${key}` : String(key);
+  const comma = isLast ? "" : ",";
+
+  // Primitive value
+  if (isPrimitive(val)) {
+    return `<div class="tree-line"><span class="tree-key">${esc(key)}</span><span class="tree-punctuation">: </span>${getValueMarkup(val)}<span class="tree-comma">${comma}</span></div>`;
+  }
+
+  // Object/Array
+  const isArray = Array.isArray(val);
+  const entries = Object.entries(val).filter(([k, v]) => matches(k, v, q));
+  const [open, close] = isArray ? ["[", "]"] : ["{", "}"];
+
+  // Empty object/array
+  if (!entries.length) {
+    return `<div class="tree-line"><span class="tree-key">${esc(key)}</span><span class="tree-punctuation">: ${open}${close}</span><span class="tree-comma">${comma}</span></div>`;
+  }
+
+  const isCollapsed = collapsed.has(nodeId);
+  const hideStyle = isCollapsed && !q ? ' style="display:none"' : "";
+  const toggleIcon = isCollapsed ? "▶" : "▼";
+  const punctText = isCollapsed ? (isArray ? "[...]" : "{...}") : open;
+
+  // Build children HTML
+  const children =
+    isCollapsed && !q ? "" : entries.map(([k, v], i) => buildNode(k, v, i === entries.length - 1, q, nodeId)).join("");
+
+  return `<div><div class="tree-line"><span class="tree-toggle" role="button" tabindex="0" aria-expanded="${String(!isCollapsed)}" data-node="${esc(nodeId)}">${toggleIcon} </span><span class="tree-key">${esc(key)}</span><span class="tree-punctuation">: ${punctText}</span></div><div class="tree-children"${hideStyle}>${children}</div><div class="tree-line"${hideStyle}><span class="tree-punctuation">${close}</span><span class="tree-comma">${comma}</span></div></div>`;
+};
+
+// Build JSON tree from data
+const buildTree = (data, q = "", basePath = "") => {
+  const entries = Object.entries(data).filter(([k, v]) => matches(k, v, q));
+  const html = entries.map(([k, v], i) => buildNode(k, v, i === entries.length - 1, q, basePath)).join("");
+  const tree = document.createElement("div");
+  tree.className = "json-tree";
+  tree.innerHTML = html;
   return tree;
 };
 
-// ============================================================================
-// Main Popup Logic
-// ============================================================================
+// Build section with copy button
+const buildSection = (title, data, query, isError, basePath) => {
+  const section = document.createElement("div");
+  section.className = isError ? "form-section error-section" : "form-section";
+  section.innerHTML = `<div class="section-header"><strong>${title}</strong><button class="copy-btn" aria-label="Copy ${title}">Copy</button></div>`;
+  section.appendChild(buildTree(data, query, basePath));
 
-const $ = (id) => document.getElementById(id);
-let currentTab = null;
-let currentForms = [];
-let searchQuery = '';
-
-// Set status message
-const setStatus = (text, type = '') => {
-  const el = $('status');
-  if (el) {
-    el.textContent = text;
-    el.className = `status ${type}`;
-  }
-};
-
-// Show/hide empty state
-const showEmpty = () => {
-  $('empty')?.classList.remove('hidden');
-  $('forms')?.classList.add('hidden');
-};
-
-const showForms = () => {
-  $('empty')?.classList.add('hidden');
-  $('forms')?.classList.remove('hidden');
-};
-
-// Create a form card
-const createFormCard = (form, index) => {
-  const card = document.createElement('div');
-  card.className = 'form-card';
-
-  const errorCount = Object.keys(form.errors || {}).length;
-  const fieldCount = Object.keys(form.values || {}).length;
-  const touchedCount = Object.values(form.touched || {}).filter(Boolean).length;
-
-  const flags = [];
-  if (form.isSubmitting) flags.push('⟳ Submitting');
-  if (form.isValidating) flags.push('✓ Validating');
-  if (form.dirty) flags.push('● Modified');
-
-  // Header
-  card.innerHTML = `
-    <div class="form-header">
-      <h3>Form ${index + 1}</h3>
-      <div class="form-stats">${fieldCount} fields • ${errorCount} errors • ${touchedCount} touched</div>
-      ${flags.length ? `<div class="form-flags">${flags.join(' ')}</div>` : ''}
-    </div>
-  `;
-
-  // Values section
-  if (Object.keys(form.values).length > 0) {
-    const section = createSection('Values', form.values);
-    card.appendChild(section);
-  }
-
-  // Errors section
-  if (errorCount > 0) {
-    const section = createSection('Errors', form.errors);
-    section.classList.add('error-section');
-    card.appendChild(section);
-  }
-
-  // Touched section
-  if (Object.keys(form.touched).length > 0) {
-    const section = createSection('Touched', form.touched);
-    card.appendChild(section);
-  }
-
-  return card;
-};
-
-// Create a collapsible section with tree view
-const createSection = (title, data) => {
-  const section = document.createElement('div');
-  section.className = 'form-section';
-
-  const header = document.createElement('div');
-  header.className = 'section-header';
-  header.innerHTML = `
-    <strong>${title}</strong>
-    <button class="copy-btn" data-copy='${JSON.stringify(data)}'>Copy</button>
-  `;
-  section.appendChild(header);
-
-  const tree = createTree(data, searchQuery);
-  section.appendChild(tree);
-
-  // Copy button handler
-  header.querySelector('.copy-btn').addEventListener('click', async (e) => {
-    const btn = e.target;
-    const data = JSON.parse(btn.dataset.copy);
-
+  const btn = section.querySelector("button");
+  btn.onclick = async () => {
     try {
       await navigator.clipboard.writeText(JSON.stringify(data, null, 2));
-      btn.textContent = 'Copied!';
-      btn.classList.add('success');
+      btn.textContent = "Copied!";
+      btn.className = "copy-btn success";
       setTimeout(() => {
-        btn.textContent = 'Copy';
-        btn.classList.remove('success');
+        btn.textContent = "Copy";
+        btn.className = "copy-btn";
       }, 1500);
     } catch {
-      btn.textContent = 'Failed';
-      btn.classList.add('error');
+      btn.textContent = "Failed";
+      btn.className = "copy-btn error";
       setTimeout(() => {
-        btn.textContent = 'Copy';
-        btn.classList.remove('error');
+        btn.textContent = "Copy";
+        btn.className = "copy-btn";
       }, 2000);
     }
-  });
+  };
 
   return section;
 };
 
-// Render forms
-const render = (forms = []) => {
-  currentForms = forms;
+// Build form card with stats and sections
+const buildCard = (form, idx, query) => {
+  const values = form.values || {};
+  const errors = form.errors || {};
+  const touched = form.touched || {};
 
-  if (forms.length === 0) {
-    showEmpty();
-    setStatus('No forms found', 'inactive');
-    return;
-  }
+  const fields = count(values);
+  const errorCount = count(errors);
+  const touchedCount = count(touched, (v) => (v === true ? 1 : 0));
 
-  showForms();
-  const container = $('forms');
-  container.innerHTML = '';
+  const flags = [
+    form.isSubmitting && "Submitting...",
+    form.isValidating && "Validating...",
+    form.dirty && "Modified!",
+  ].filter(Boolean);
 
-  let visibleForms = 0;
-  forms.forEach((form, i) => {
-    // Apply search filter
-    if (searchQuery) {
-      const q = searchQuery.toLowerCase();
-      const hasMatch =
-        JSON.stringify(form.values).toLowerCase().includes(q) ||
-        JSON.stringify(form.errors).toLowerCase().includes(q) ||
-        JSON.stringify(form.touched).toLowerCase().includes(q);
+  const card = document.createElement("div");
+  card.className = "form-card";
+  card.innerHTML = `<div class="form-header"><h3>Form ${idx + 1}</h3><div class="form-stats">${fields} fields • ${errorCount} errors • ${touchedCount} touched</div>${flags.length ? `<div class="form-flags">${flags.join(" ")}</div>` : ""}</div>`;
 
-      if (!hasMatch) return;
-    }
+  const base = `form-${idx}`;
+  if (Object.keys(values).length) card.appendChild(buildSection("Values", values, query, false, `${base}.values`));
+  if (errorCount) card.appendChild(buildSection("Errors", errors, query, true, `${base}.errors`));
+  if (Object.keys(touched).length) card.appendChild(buildSection("Touched", touched, query, false, `${base}.touched`));
 
-    const card = createFormCard(form, i);
-    container.appendChild(card);
-    visibleForms++;
-  });
+  return card;
+};
 
-  if (visibleForms === 0 && searchQuery) {
-    showEmpty();
-    setStatus('No matches found', 'inactive');
-  } else if (searchQuery) {
-    setStatus(`${visibleForms} of ${forms.length} forms match`, 'active');
+// State
+let tab;
+let forms = [];
+
+// Update status bar
+const setStatus = (text, type = "") => {
+  els.status.textContent = text;
+  els.status.className = type ? `status ${type}` : "status";
+};
+
+// Render forms with optional search filter
+const render = (formList = [], searchQuery = "") => {
+  forms = formList;
+
+  // Filter forms that match search
+  const filtered = searchQuery
+    ? forms.filter((f) => ["values", "errors", "touched"].some((k) => matches(k, f[k], searchQuery)))
+    : forms;
+
+  const hasMatches = filtered.length > 0;
+
+  // Toggle empty/forms display
+  els.empty.classList.toggle("hidden", hasMatches);
+  els.forms.classList.toggle("hidden", !hasMatches);
+
+  if (hasMatches) {
+    const frag = document.createDocumentFragment();
+    filtered.forEach((f, i) => {
+      frag.appendChild(buildCard(f, i, searchQuery));
+    });
+    els.forms.innerHTML = "";
+    els.forms.appendChild(frag);
+    const countMsg = searchQuery
+      ? `${filtered.length} of ${forms.length} match`
+      : `${forms.length} form${forms.length !== 1 ? "s" : ""}`;
+    setStatus(countMsg, "active");
   } else {
-    setStatus(`Found ${forms.length} form${forms.length === 1 ? '' : 's'}`, 'active');
+    setStatus(forms.length ? "No matches found" : "No forms found", "inactive");
   }
 };
 
-// Fetch forms from content script
-const fetchForms = async () => {
+// Load forms from active tab
+const load = async () => {
   try {
-    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-    if (!tab?.id) {
-      setStatus('No active tab', 'error');
-      showEmpty();
-      return;
-    }
+    const [t] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (!t?.id) return setStatus("No active tab", "error");
 
-    currentTab = tab;
-    const response = await chrome.tabs.sendMessage(tab.id, { type: 'get-forms' });
-    render(response?.forms || []);
+    tab = t;
+    const res = await chrome.tabs.sendMessage(t.id, { type: "get-forms" });
+    render(res?.forms || []);
   } catch {
-    setStatus('Extension not loaded on this page', 'error');
-    showEmpty();
+    setStatus("Not loaded on this page", "error");
   }
 };
 
-// Refresh forms
-const refresh = async () => {
-  if (!currentTab?.id) return;
-
-  setStatus('Refreshing...', 'loading');
-
-  try {
-    await chrome.tabs.sendMessage(currentTab.id, { type: 'refresh' });
-    setTimeout(async () => {
-      const response = await chrome.tabs.sendMessage(currentTab.id, { type: 'get-forms' });
-      render(response?.forms || []);
-    }, 200);
-  } catch {
-    setStatus('Refresh failed', 'error');
-  }
-};
-
-// Search handler
+// Event listeners
 let searchTimeout;
-$('search').addEventListener('input', (e) => {
+els.search.addEventListener("input", (e) => {
   clearTimeout(searchTimeout);
-  searchTimeout = setTimeout(() => {
-    searchQuery = e.target.value.trim();
-    render(currentForms);
-  }, 200);
+  searchTimeout = setTimeout(() => render(forms, e.target.value.trim()), 150);
 });
 
-$('clear').addEventListener('click', () => {
-  $('search').value = '';
-  searchQuery = '';
-  render(currentForms);
+els.clear.addEventListener("click", () => {
+  els.search.value = "";
+  els.search.focus();
+  render(forms);
 });
 
-$('refresh').addEventListener('click', refresh);
-
-// Listen for live updates
+// Listen for form updates from content script
 chrome.runtime.onMessage.addListener((msg, sender) => {
-  if (msg?.type === 'update' && sender?.tab?.id === currentTab?.id) {
-    render(msg.forms || []);
+  if (msg?.type === "update" && sender?.tab?.id === tab?.id) {
+    render(msg.forms || [], els.search.value.trim());
   }
 });
 
-// Initialize
-document.addEventListener('DOMContentLoaded', fetchForms);
+// Toggle collapse on tree nodes
+const toggleNode = (target) => {
+  const id = target.getAttribute("data-node");
+  if (!id) return;
+  collapsed.has(id) ? collapsed.delete(id) : collapsed.add(id);
+  render(forms, els.search.value.trim());
+};
+
+els.forms.addEventListener("click", (e) => {
+  if (e.target?.classList?.contains("tree-toggle")) toggleNode(e.target);
+});
+
+els.forms.addEventListener("keydown", (e) => {
+  if (!e.target?.classList?.contains("tree-toggle")) return;
+  if (e.key !== "Enter" && e.key !== " ") return;
+  e.preventDefault();
+  toggleNode(e.target);
+});
+
+// Initialize on load
+document.addEventListener("DOMContentLoaded", load);

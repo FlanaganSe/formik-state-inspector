@@ -1,40 +1,24 @@
 (() => {
-  // Helper to check if extension context is still valid
-  const isContextValid = () => chrome?.runtime?.id != null;
+  if (!chrome?.runtime?.id) return;
 
-  // Inject script into page context to access React DevTools hook
-  if (isContextValid()) {
-    const script = document.createElement("script");
-    script.src = chrome.runtime.getURL("src/inject.js");
-    script.onload = () => script.remove();
-    (document.head || document.documentElement).appendChild(script);
-  }
+  // Inject script into page context
+  const script = document.createElement("script");
+  script.src = chrome.runtime.getURL("src/inject.js");
+  script.onload = () => script.remove();
+  (document.head || document.documentElement).appendChild(script);
 
-  let currentForms = [];
+  let forms = [];
 
-  // Forward messages from page to extension
-  window.addEventListener("message", (e) => {
-    if (e.source !== window || e.origin !== window.location.origin) return;
-    if (e.data?.source !== "formik-inspector") return;
-
-    if (e.data.type === "update") {
-      currentForms = e.data.forms || [];
-
-      if (isContextValid()) {
-        chrome.runtime.sendMessage({ type: "badge", count: currentForms.length });
-        chrome.runtime.sendMessage({ type: "update", forms: currentForms });
-      }
+  // Listen for Formik updates from injected script
+  window.addEventListener("message", ({ source, data }) => {
+    if (source === window && data?.source === "formik-inspector" && data?.type === "update") {
+      forms = data.forms || [];
+      chrome.runtime.sendMessage({ type: "update", count: forms.length, forms });
     }
   });
 
-  // Handle messages from extension (popup)
-  chrome.runtime?.onMessage?.addListener((msg, _, respond) => {
-    if (!isContextValid()) return;
-
-    if (msg.type === "get-forms") {
-      respond({ forms: currentForms });
-    } else if (msg.type === "refresh") {
-      window.postMessage({ source: "formik-inspector", type: "refresh" }, window.location.origin);
-    }
+  // Respond to popup requests for current forms
+  chrome.runtime.onMessage.addListener((msg, _, respond) => {
+    if (msg.type === "get-forms") respond({ forms });
   });
 })();
