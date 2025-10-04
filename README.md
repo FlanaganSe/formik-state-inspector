@@ -1,73 +1,67 @@
 # Formik State Inspector
 
-Chrome extension for inspecting Formik form state in React applications. Real-time updates, collapsible JSON tree, instant search.
+Chrome extension for debugging Formik forms in React applications. Provides real-time inspection of form state with a collapsible JSON tree view and instant search.
 
 ## What It Does
 
-Displays Formik form state (values, errors, touched, flags) in a popup with:
-- Native JSON tree view with collapse/expand
-- Real-time updates on every React render
+Displays Formik state (values, errors, touched, flags) in a popup with:
+- Collapsible JSON tree with syntax highlighting
+- Real-time updates on every React render (debounced 100ms)
 - Search/filter across all fields
-- Copy to clipboard
-- Badge showing form count
+- Per-section copy to clipboard
+- Badge showing number of forms detected
 
 ## Requirements
 
-- [React Developer Tools](https://chrome.google.com/webstore/detail/react-developer-tools/fmkadmapgofadopljbjfkapdkoienihi) extension installed
-- React app using Formik
+- [React Developer Tools](https://chrome.google.com/webstore/detail/react-developer-tools/fmkadmapgofadopljbjfkapdkoienihi) extension
+- React application using Formik
 
 ## Installation
 
 ```bash
-# Clone and load
 git clone https://github.com/FlanaganSe/formik-state-inspector
 cd formik-state-inspector
 
-# Open chrome://extensions/
-# Enable "Developer mode"
-# Click "Load unpacked" → select this directory
+# Chrome: navigate to chrome://extensions/
+# Enable "Developer mode" → "Load unpacked" → select this directory
 ```
 
 ## Usage
 
-1. Navigate to a page with Formik forms
-2. Click extension icon in toolbar
-3. View state in JSON tree format
-4. Click **▼/▶** to collapse/expand
-5. Type in search to filter fields
-6. Click **Copy** to copy JSON
+1. Open a page with Formik forms
+2. Click the extension icon (badge shows form count)
+3. View state in the popup (collapse nodes, search/filter, copy forms as JSON)
+4. State updates automatically as you interact with forms
 
 ## How It Works
 
-Hooks into `__REACT_DEVTOOLS_GLOBAL_HOOK__` to scan React fiber tree for Formik instances. Updates automatically on every React commit (debounced 100ms).
+Hooks into `__REACT_DEVTOOLS_GLOBAL_HOOK__` (provided by React DevTools) to scan the React fiber tree for Formik instances. Detects Formik by checking for component names matching `/Formik/i` or validating the state shape (must have `values`, `errors`, `touched`, `isSubmitting`).
 
 **Architecture:**
 ```
-inject.js     → Scans fiber tree, finds Formik
-content.js    → Message bridge
-background.js → Updates badge
-popup.js      → UI with JSON tree
+inject.js     → Scans fiber tree via BFS (max depth 100), extracts form state
+content.js    → Message bridge between page and extension
+background.js → Updates badge with form count
+popup.js      → Renders JSON tree UI with collapsible nodes
 ```
 
-**Detection logic:**
-- Checks for `fiber.type.name` matching `/Formik/i`
-- Or validates shape: has `values`, `errors`, `touched`, `isSubmitting`
+**State snapshots include:** values, errors, touched, isSubmitting, isValidating, dirty
+
+**Updates:** Triggered on React's `onCommitFiberRoot` hook, debounced to 100ms
 
 ## Privacy
 
-- ✅ All processing happens locally in your browser
-- ✅ Zero network requests
-- ✅ No data collection or storage
-- ✅ Only permission: `activeTab`
-- ✅ Data cleared when popup closes
+All processing happens locally in your browser. Zero network requests, zero data collection, zero storage. Only permission required is `activeTab`. Form data is held in memory only while the popup is open.
 
-See [PRIVACY.md](PRIVACY.md)
+See [PRIVACY.md](PRIVACY.md) for details.
 
 ## Technical Details
 
 - **Manifest:** v3
-- **Permissions:** `activeTab` only
-- **Dependencies:** None (vanilla JS)
+- **Permissions:** activeTab
+- **Dependencies:** None (vanilla JavaScript)
+- **Content script:** Runs on all http/https pages at document_idle
+- **UI:** 600x600px popup with path-based tree node persistence
 - **Syntax highlighting:** Keys (blue), strings (green), numbers (purple), booleans (red)
 
 ## License
