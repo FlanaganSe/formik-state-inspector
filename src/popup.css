@@ -79,6 +79,22 @@ body {
   color: #2563eb;
 }
 
+.search-bar button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.search-bar button:disabled:hover {
+  background: #fff;
+  border-color: #d1d5db;
+  color: #6b7280;
+}
+
+#collapseAll {
+  font-size: 12px;
+  font-weight: 500;
+}
+
 .status {
   padding: 10px 16px;
   background: #fff;

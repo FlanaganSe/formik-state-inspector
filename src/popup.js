@@ -12,6 +12,7 @@ const els = {
   status: $("status"),
   search: $("search"),
   clear: $("clear"),
+  collapseAll: $("collapseAll"),
 };
 
 // Count values with optional filter
@@ -47,9 +48,55 @@ const getValueMarkup = (val) => {
 // Track collapsed nodes (persists across renders)
 const collapsed = new Set();
 
+// Get all node IDs currently visible in the DOM
+const getAllVisibleNodes = () => {
+  const toggles = els.forms.querySelectorAll(".tree-toggle");
+  return Array.from(toggles)
+    .map((t) => t.getAttribute("data-node"))
+    .filter(Boolean);
+};
+
+// Update collapse-all button state based on current collapse status
+const updateCollapseButton = () => {
+  const visibleNodes = getAllVisibleNodes();
+  if (!visibleNodes.length) {
+    els.collapseAll.disabled = true;
+    els.collapseAll.textContent = "Collapse";
+    return;
+  }
+
+  els.collapseAll.disabled = false;
+  const collapsedCount = visibleNodes.filter((id) => collapsed.has(id)).length;
+  const allCollapsed = collapsedCount === visibleNodes.length;
+  els.collapseAll.textContent = allCollapsed ? "Expand" : "Collapse";
+};
+
+// Toggle all visible nodes
+const toggleAllNodes = () => {
+  const visibleNodes = getAllVisibleNodes();
+  if (!visibleNodes.length) return;
+
+  const collapsedCount = visibleNodes.filter((id) => collapsed.has(id)).length;
+  const shouldCollapse = collapsedCount < visibleNodes.length;
+
+  console.log({ collapsed });
+  if (shouldCollapse) {
+    visibleNodes.forEach((id) => {
+      collapsed.add(id);
+    });
+  } else {
+    collapsed.forEach((id) => {
+      collapsed.delete(id);
+    });
+  }
+
+  render(forms, els.search.value.trim());
+};
+
 // Build tree node recursively
-const buildNode = (key, val, isLast, q, path) => {
-  if (!matches(key, val, q)) return "";
+// showAll: when true, render full subtree regardless of query matches
+const buildNode = (key, val, isLast, q, path, showAll = false) => {
+  if (!showAll && !matches(key, val, q)) return "";
 
   const nodeId = path ? `${path}.${key}` : String(key);
   const comma = isLast ? "" : ",";
@@ -61,7 +108,8 @@ const buildNode = (key, val, isLast, q, path) => {
 
   // Object/Array
   const isArray = Array.isArray(val);
-  const entries = Object.entries(val).filter(([k, v]) => matches(k, v, q));
+  const keyHit = q && String(key).toLowerCase().includes(q.toLowerCase());
+  const entries = showAll || keyHit ? Object.entries(val) : Object.entries(val).filter(([k, v]) => matches(k, v, q));
   const [open, close] = isArray ? ["[", "]"] : ["{", "}"];
 
   // Empty object/array
@@ -70,13 +118,14 @@ const buildNode = (key, val, isLast, q, path) => {
   }
 
   const isCollapsed = collapsed.has(nodeId);
-  const hideStyle = isCollapsed && !q ? ' style="display:none"' : "";
+  const hideStyle = isCollapsed ? ' style="display:none"' : "";
   const toggleIcon = isCollapsed ? "▶" : "▼";
   const punctText = isCollapsed ? (isArray ? "[...]" : "{...}") : open;
 
   // Build children HTML
-  const children =
-    isCollapsed && !q ? "" : entries.map(([k, v], i) => buildNode(k, v, i === entries.length - 1, q, nodeId)).join("");
+  const children = isCollapsed
+    ? ""
+    : entries.map(([k, v], i) => buildNode(k, v, i === entries.length - 1, q, nodeId, showAll || keyHit)).join("");
 
   return `<div><div class="tree-line"><span class="tree-toggle" role="button" tabindex="0" aria-expanded="${String(!isCollapsed)}" data-node="${esc(nodeId)}">${toggleIcon} </span><span class="tree-key">${esc(key)}</span><span class="tree-punctuation">: ${punctText}</span></div><div class="tree-children"${hideStyle}>${children}</div><div class="tree-line"${hideStyle}><span class="tree-punctuation">${close}</span><span class="tree-comma">${comma}</span></div></div>`;
 };
@@ -84,7 +133,7 @@ const buildNode = (key, val, isLast, q, path) => {
 // Build JSON tree from data
 const buildTree = (data, q = "", basePath = "") => {
   const entries = Object.entries(data).filter(([k, v]) => matches(k, v, q));
-  const html = entries.map(([k, v], i) => buildNode(k, v, i === entries.length - 1, q, basePath)).join("");
+  const html = entries.map(([k, v], i) => buildNode(k, v, i === entries.length - 1, q, basePath, false)).join("");
   const tree = document.createElement("div");
   tree.className = "json-tree";
   tree.innerHTML = html;
@@ -188,6 +237,8 @@ const render = (formList = [], searchQuery = "") => {
   } else {
     setStatus(forms.length ? "No matches found" : "No forms found", "inactive");
   }
+
+  updateCollapseButton();
 };
 
 // Load forms from active tab
@@ -216,6 +267,8 @@ els.clear.addEventListener("click", () => {
   els.search.focus();
   render(forms);
 });
+
+els.collapseAll.addEventListener("click", toggleAllNodes);
 
 // Listen for form updates from content script
 chrome.runtime.onMessage.addListener((msg, sender) => {
