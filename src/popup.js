@@ -12,6 +12,7 @@ const els = {
   status: $("status"),
   search: $("search"),
   clear: $("clear"),
+  collapseAll: $("collapseAll"),
 };
 
 // Count values with optional filter
@@ -47,6 +48,51 @@ const getValueMarkup = (val) => {
 // Track collapsed nodes (persists across renders)
 const collapsed = new Set();
 
+// Get all node IDs currently visible in the DOM
+const getAllVisibleNodes = () => {
+  const toggles = els.forms.querySelectorAll(".tree-toggle");
+  return Array.from(toggles)
+    .map((t) => t.getAttribute("data-node"))
+    .filter(Boolean);
+};
+
+// Update collapse-all button state based on current collapse status
+const updateCollapseButton = () => {
+  const visibleNodes = getAllVisibleNodes();
+  if (!visibleNodes.length) {
+    els.collapseAll.disabled = true;
+    els.collapseAll.textContent = "Collapse";
+    return;
+  }
+
+  els.collapseAll.disabled = false;
+  const collapsedCount = visibleNodes.filter((id) => collapsed.has(id)).length;
+  const allCollapsed = collapsedCount === visibleNodes.length;
+  els.collapseAll.textContent = allCollapsed ? "Expand" : "Collapse";
+};
+
+// Toggle all visible nodes
+const toggleAllNodes = () => {
+  const visibleNodes = getAllVisibleNodes();
+  if (!visibleNodes.length) return;
+
+  const collapsedCount = visibleNodes.filter((id) => collapsed.has(id)).length;
+  const shouldCollapse = collapsedCount < visibleNodes.length;
+
+  console.log({ collapsed });
+  if (shouldCollapse) {
+    visibleNodes.forEach((id) => {
+      collapsed.add(id);
+    });
+  } else {
+    collapsed.forEach((id) => {
+      collapsed.delete(id);
+    });
+  }
+
+  render(forms, els.search.value.trim());
+};
+
 // Build tree node recursively
 // showAll: when true, render full subtree regardless of query matches
 const buildNode = (key, val, isLast, q, path, showAll = false) => {
@@ -63,9 +109,7 @@ const buildNode = (key, val, isLast, q, path, showAll = false) => {
   // Object/Array
   const isArray = Array.isArray(val);
   const keyHit = q && String(key).toLowerCase().includes(q.toLowerCase());
-  const entries = (showAll || keyHit)
-    ? Object.entries(val)
-    : Object.entries(val).filter(([k, v]) => matches(k, v, q));
+  const entries = showAll || keyHit ? Object.entries(val) : Object.entries(val).filter(([k, v]) => matches(k, v, q));
   const [open, close] = isArray ? ["[", "]"] : ["{", "}"];
 
   // Empty object/array
@@ -193,6 +237,8 @@ const render = (formList = [], searchQuery = "") => {
   } else {
     setStatus(forms.length ? "No matches found" : "No forms found", "inactive");
   }
+
+  updateCollapseButton();
 };
 
 // Load forms from active tab
@@ -221,6 +267,8 @@ els.clear.addEventListener("click", () => {
   els.search.focus();
   render(forms);
 });
+
+els.collapseAll.addEventListener("click", toggleAllNodes);
 
 // Listen for form updates from content script
 chrome.runtime.onMessage.addListener((msg, sender) => {
