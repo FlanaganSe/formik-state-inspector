@@ -74,16 +74,14 @@ const buildNode = (key, val, isLast, q, path, showAll = false) => {
   }
 
   const isCollapsed = collapsed.has(nodeId);
-  // While searching, force expanded to show context and matches
-  const hideStyle = isCollapsed && !q ? ' style="display:none"' : "";
+  const hideStyle = isCollapsed ? ' style="display:none"' : "";
   const toggleIcon = isCollapsed ? "▶" : "▼";
   const punctText = isCollapsed ? (isArray ? "[...]" : "{...}") : open;
 
   // Build children HTML
-  const children =
-    isCollapsed && !q
-      ? ""
-      : entries.map(([k, v], i) => buildNode(k, v, i === entries.length - 1, q, nodeId, showAll || keyHit)).join("");
+  const children = isCollapsed
+    ? ""
+    : entries.map(([k, v], i) => buildNode(k, v, i === entries.length - 1, q, nodeId, showAll || keyHit)).join("");
 
   return `<div><div class="tree-line"><span class="tree-toggle" role="button" tabindex="0" aria-expanded="${String(!isCollapsed)}" data-node="${esc(nodeId)}">${toggleIcon} </span><span class="tree-key">${esc(key)}</span><span class="tree-punctuation">: ${punctText}</span></div><div class="tree-children"${hideStyle}>${children}</div><div class="tree-line"${hideStyle}><span class="tree-punctuation">${close}</span><span class="tree-comma">${comma}</span></div></div>`;
 };
