@@ -9,7 +9,6 @@ const esc = (s) =>
 const els = {
   forms: $("forms"),
   empty: $("empty"),
-  status: $("status"),
   search: $("search"),
   clear: $("clear"),
   collapseAll: $("collapseAll"),
@@ -171,7 +170,7 @@ const buildSection = (title, data, query, isError, basePath) => {
 };
 
 // Build form card with stats and sections
-const buildCard = (form, idx, query) => {
+const buildCard = (form, idx, query, totalForms) => {
   const values = form.values || {};
   const errors = form.errors || {};
   const touched = form.touched || {};
@@ -181,14 +180,18 @@ const buildCard = (form, idx, query) => {
   const touchedCount = count(touched, (v) => (v === true ? 1 : 0));
 
   const flags = [
-    form.isSubmitting && "Submitting...",
-    form.isValidating && "Validating...",
-    form.dirty && "Modified!",
+    form.isSubmitting && "Submitting",
+    form.isValidating && "Validating",
+    form.dirty && "Modified",
   ].filter(Boolean);
 
   const card = document.createElement("div");
   card.className = "form-card";
-  card.innerHTML = `<div class="form-header"><h3>Form ${idx + 1}</h3><div class="form-stats">${fields} fields • ${errorCount} errors • ${touchedCount} touched</div>${flags.length ? `<div class="form-flags">${flags.join(" ")}</div>` : ""}</div>`;
+
+  const formTitle = totalForms > 1 ? `Form ${idx + 1} of ${totalForms}` : `Form ${idx + 1}`;
+  const stats = [`${fields} fields`, `${errorCount} errors`, `${touchedCount} touched`, ...flags].join(" • ");
+
+  card.innerHTML = `<div class="form-header"><h3>${formTitle}</h3><div class="form-stats">${stats}</div></div>`;
 
   const base = `form-${idx}`;
   if (Object.keys(values).length) card.appendChild(buildSection("Values", values, query, false, `${base}.values`));
@@ -201,12 +204,6 @@ const buildCard = (form, idx, query) => {
 // State
 let tab;
 let forms = [];
-
-// Update status bar
-const setStatus = (text, type = "") => {
-  els.status.textContent = text;
-  els.status.className = type ? `status ${type}` : "status";
-};
 
 // Render forms with optional search filter
 const render = (formList = [], searchQuery = "") => {
@@ -226,16 +223,10 @@ const render = (formList = [], searchQuery = "") => {
   if (hasMatches) {
     const frag = document.createDocumentFragment();
     filtered.forEach((f, i) => {
-      frag.appendChild(buildCard(f, i, searchQuery));
+      frag.appendChild(buildCard(f, i, searchQuery, forms.length));
     });
     els.forms.innerHTML = "";
     els.forms.appendChild(frag);
-    const countMsg = searchQuery
-      ? `${filtered.length} of ${forms.length} match`
-      : `${forms.length} form${forms.length !== 1 ? "s" : ""}`;
-    setStatus(countMsg, "active");
-  } else {
-    setStatus(forms.length ? "No matches found" : "No forms found", "inactive");
   }
 
   updateCollapseButton();
@@ -245,13 +236,13 @@ const render = (formList = [], searchQuery = "") => {
 const load = async () => {
   try {
     const [t] = await chrome.tabs.query({ active: true, currentWindow: true });
-    if (!t?.id) return setStatus("No active tab", "error");
+    if (!t?.id) return;
 
     tab = t;
     const res = await chrome.tabs.sendMessage(t.id, { type: "get-forms" });
     render(res?.forms || []);
   } catch {
-    setStatus("Not loaded on this page", "error");
+    render([]);
   }
 };
 
