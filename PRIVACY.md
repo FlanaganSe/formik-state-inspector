@@ -19,14 +19,30 @@ This is a local debugging tool for developers. It reads Formik form state from y
 
 **What we DON'T do:**
 - Send anything over the network
-- Store anything permanently (no localStorage, no databases, nothing)
+- Store form data permanently
 - Track you or collect analytics
+- Share data with third parties
+
+## Local Storage
+
+The extension stores UI preferences locally in your browser using `chrome.storage.local`:
+- Search filter text
+- Which tree nodes you've collapsed/expanded
+- Scroll position in the popup
+
+**What's NOT stored:**
+- Form values, errors, or any actual form data
+- Personal information
+- Browsing history
+
+This state is saved per-tab to give you a consistent debugging experience. You can clear this storage anytime via chrome://extensions.
 
 ## How It Works
 
-All data processing happens locally in your browser. Form data is held in memory only while the popup is open. Close the popup or refresh the page, and it's gone.
+All data processing happens locally in your browser. Form data is held in memory only while the popup is open and is never persisted to disk.
 
 **Permissions:**
 - `activeTab` - Required to read form state from the current tab
+- `storage` - Used to save UI preferences (search filter, collapsed nodes, scroll position)
 
-No servers, no tracking, no data collection.
+No servers, no tracking, no external data collection.

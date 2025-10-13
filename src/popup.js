@@ -78,18 +78,13 @@ const toggleAllNodes = () => {
   const collapsedCount = visibleNodes.filter((id) => collapsed.has(id)).length;
   const shouldCollapse = collapsedCount < visibleNodes.length;
 
-  console.log({ collapsed });
   if (shouldCollapse) {
-    visibleNodes.forEach((id) => {
-      collapsed.add(id);
-    });
+    visibleNodes.forEach((id) => collapsed.add(id));
   } else {
-    collapsed.forEach((id) => {
-      collapsed.delete(id);
-    });
+    collapsed.forEach((id) => collapsed.delete(id));
   }
 
-  render(forms, els.search.value.trim());
+  render(forms, els.search.value.trim(), true);
 };
 
 // Build tree node recursively
@@ -201,13 +196,50 @@ const buildCard = (form, idx, query, totalForms) => {
   return card;
 };
 
+// State persistence
+const getStorageKey = (url) => `state:${url}`;
+
+const saveState = (() => {
+  let timeout;
+  return (url, state) => {
+    clearTimeout(timeout);
+    timeout = setTimeout(async () => {
+      try {
+        await chrome.storage.local.set({ [getStorageKey(url)]: state });
+      } catch {}
+    }, 300);
+  };
+})();
+
+const loadState = async (url) => {
+  try {
+    const key = getStorageKey(url);
+    const data = await chrome.storage.local.get(key);
+    return data[key] || { search: "", collapsed: [], scroll: 0 };
+  } catch {
+    return { search: "", collapsed: [], scroll: 0 };
+  }
+};
+
 // State
 let tab;
 let forms = [];
 
+// Save current UI state to storage
+const saveCurrentState = () => {
+  if (tab?.url) {
+    saveState(tab.url, {
+      search: els.search.value.trim(),
+      collapsed: Array.from(collapsed),
+      scroll: els.forms.scrollTop,
+    });
+  }
+};
+
 // Render forms with optional search filter
-const render = (formList = [], searchQuery = "") => {
+const render = (formList = [], searchQuery = "", restoreScroll = false, skipSave = false) => {
   forms = formList;
+  const prevScroll = restoreScroll ? els.forms.scrollTop : 0;
 
   // Filter forms that match search
   const filtered = searchQuery
@@ -230,6 +262,16 @@ const render = (formList = [], searchQuery = "") => {
   }
 
   updateCollapseButton();
+
+  // Restore scroll position after DOM updates, then save state
+  if (restoreScroll && prevScroll) {
+    requestAnimationFrame(() => {
+      els.forms.scrollTop = prevScroll;
+      if (!skipSave) saveCurrentState();
+    });
+  } else if (!skipSave) {
+    saveCurrentState();
+  }
 };
 
 // Load forms from active tab
@@ -239,8 +281,27 @@ const load = async () => {
     if (!t?.id) return;
 
     tab = t;
+
+    // Load saved state for this tab
+    const state = await loadState(t.url);
+
+    // Restore collapsed nodes
+    collapsed.clear();
+    state.collapsed.forEach((id) => collapsed.add(id));
+
+    // Restore search filter
+    els.search.value = state.search;
+
+    // Get forms and render (skip saving to avoid overwriting restored state)
     const res = await chrome.tabs.sendMessage(t.id, { type: "get-forms" });
-    render(res?.forms || []);
+    render(res?.forms || [], state.search, false, true);
+
+    // Restore scroll position after render
+    if (state.scroll) {
+      requestAnimationFrame(() => {
+        els.forms.scrollTop = state.scroll;
+      });
+    }
   } catch {
     render([]);
   }
@@ -264,7 +325,7 @@ els.collapseAll.addEventListener("click", toggleAllNodes);
 // Listen for form updates from content script
 chrome.runtime.onMessage.addListener((msg, sender) => {
   if (msg?.type === "update" && sender?.tab?.id === tab?.id) {
-    render(msg.forms || [], els.search.value.trim());
+    render(msg.forms || [], els.search.value.trim(), true);
   }
 });
 
@@ -273,7 +334,7 @@ const toggleNode = (target) => {
   const id = target.getAttribute("data-node");
   if (!id) return;
   collapsed.has(id) ? collapsed.delete(id) : collapsed.add(id);
-  render(forms, els.search.value.trim());
+  render(forms, els.search.value.trim(), true);
 };
 
 els.forms.addEventListener("click", (e) => {
@@ -285,6 +346,13 @@ els.forms.addEventListener("keydown", (e) => {
   if (e.key !== "Enter" && e.key !== " ") return;
   e.preventDefault();
   toggleNode(e.target);
+});
+
+// Save scroll position on scroll
+let scrollTimeout;
+els.forms.addEventListener("scroll", () => {
+  clearTimeout(scrollTimeout);
+  scrollTimeout = setTimeout(saveCurrentState, 150);
 });
 
 // Initialize on load

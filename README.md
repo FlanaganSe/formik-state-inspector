@@ -10,6 +10,7 @@ Displays Formik state (values, errors, touched, flags) in a popup with:
 - Search/filter across all fields
 - Per-section copy to clipboard
 - Badge showing number of forms detected
+- Persistent UI state (search filter, collapsed nodes, scroll position)
 
 ## Requirements
 
@@ -51,17 +52,20 @@ popup.js      → Renders JSON tree UI with collapsible nodes
 
 ## Privacy
 
-All processing happens locally in your browser. Zero network requests, zero data collection, zero storage. Only permission required is `activeTab`. Form data is held in memory only while the popup is open.
+All processing happens locally in your browser. Zero network requests, zero tracking, zero external data collection.
+
+**Local storage:** UI state (search filter, collapsed nodes, scroll position) is saved locally per-tab using `chrome.storage.local` to persist your view preferences across popup sessions. No form data is stored—only UI preferences. You can clear this anytime via chrome://extensions.
 
 See [PRIVACY.md](PRIVACY.md) for details.
 
 ## Technical Details
 
 - **Manifest:** v3
-- **Permissions:** activeTab
+- **Permissions:** activeTab, storage
 - **Dependencies:** None (vanilla JavaScript)
 - **Content script:** Runs on all http/https pages at document_idle
 - **UI:** 600x600px popup with path-based tree node persistence
+- **State persistence:** Per-tab storage of UI preferences (debounced 300ms)
 - **Syntax highlighting:** Keys (blue), strings (green), numbers (purple), booleans (red)
 
 ## License
