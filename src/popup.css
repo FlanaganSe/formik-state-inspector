@@ -174,15 +174,39 @@ body {
 
 .section-header {
   display: flex;
-  justify-content: space-between;
   align-items: center;
   margin-bottom: 10px;
+  gap: 4px;
+}
+
+.section-toggle {
+  cursor: pointer;
+  user-select: none;
+  color: #6b7280;
+  display: inline-block;
+  min-width: 14px;
+  transition: color 0.2s;
+}
+
+.section-toggle:hover {
+  color: #2563eb;
+}
+
+.section-toggle:focus {
+  outline: 2px solid #2563eb;
+  outline-offset: 2px;
+  border-radius: 2px;
 }
 
 .section-header strong {
   font-size: 13px;
   font-weight: 600;
   color: #374151;
+  flex: 1;
+}
+
+.section-content {
+  overflow: hidden;
 }
 
 .copy-btn {

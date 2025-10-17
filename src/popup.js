@@ -47,6 +47,9 @@ const getValueMarkup = (val) => {
 // Track collapsed nodes (persists across renders)
 const collapsed = new Set();
 
+// Track collapsed sections (persists across renders)
+const collapsedSections = new Set();
+
 // Get all node IDs currently visible in the DOM
 const getAllVisibleNodes = () => {
   const toggles = els.forms.querySelectorAll(".tree-toggle");
@@ -139,14 +142,21 @@ const buildTree = (data, q = "", basePath = "") => {
   return tree;
 };
 
-// Build section with copy button
-const buildSection = (title, data, query, isError, basePath) => {
+// Build section with copy button and collapse toggle
+const buildSection = (title, data, query, isError, basePath, sectionId) => {
   const section = document.createElement("div");
   section.className = isError ? "form-section error-section" : "form-section";
-  section.innerHTML = `<div class="section-header"><strong>${title}</strong><button class="copy-btn" aria-label="Copy ${title}">Copy</button></div>`;
-  section.appendChild(buildTree(data, query, basePath));
 
-  const btn = section.querySelector("button");
+  const isCollapsed = collapsedSections.has(sectionId);
+  const toggleIcon = isCollapsed ? "▶" : "▼";
+  const hideStyle = isCollapsed ? ' style="display:none"' : "";
+
+  section.innerHTML = `<div class="section-header"><span class="section-toggle" role="button" tabindex="0" aria-expanded="${String(!isCollapsed)}" data-section="${esc(sectionId)}">${toggleIcon} </span><strong>${title}</strong><button class="copy-btn" aria-label="Copy ${title}">Copy</button></div><div class="section-content"${hideStyle}></div>`;
+
+  const contentDiv = section.querySelector(".section-content");
+  contentDiv.appendChild(buildTree(data, query, basePath));
+
+  const btn = section.querySelector(".copy-btn");
   btn.onclick = async () => {
     try {
       await navigator.clipboard.writeText(JSON.stringify(data, null, 2));
@@ -194,9 +204,9 @@ const buildCard = (form, idx, query, totalForms) => {
   card.innerHTML = `<div class="form-header"><h3>${formTitle}</h3><div class="form-stats">${stats}</div></div>`;
 
   const base = `form-${idx}`;
-  if (Object.keys(values).length) card.appendChild(buildSection("Values", values, query, false, `${base}.values`));
-  if (errorCount) card.appendChild(buildSection("Errors", errors, query, true, `${base}.errors`));
-  if (Object.keys(touched).length) card.appendChild(buildSection("Touched", touched, query, false, `${base}.touched`));
+  if (Object.keys(values).length) card.appendChild(buildSection("Values", values, query, false, `${base}.values`, `${base}.values`));
+  if (errorCount) card.appendChild(buildSection("Errors", errors, query, true, `${base}.errors`, `${base}.errors`));
+  if (Object.keys(touched).length) card.appendChild(buildSection("Touched", touched, query, false, `${base}.touched`, `${base}.touched`));
 
   return card;
 };
@@ -222,8 +232,9 @@ const render = (formList = [], searchQuery = "") => {
 
   if (hasMatches) {
     const frag = document.createDocumentFragment();
-    filtered.forEach((f, i) => {
-      frag.appendChild(buildCard(f, i, searchQuery, forms.length));
+    filtered.forEach((f) => {
+      const originalIndex = forms.indexOf(f);
+      frag.appendChild(buildCard(f, originalIndex, searchQuery, forms.length));
     });
     els.forms.innerHTML = "";
     els.forms.appendChild(frag);
@@ -276,15 +287,30 @@ const toggleNode = (target) => {
   render(forms, els.search.value.trim());
 };
 
+// Toggle collapse on sections
+const toggleSection = (target) => {
+  const id = target.getAttribute("data-section");
+  if (!id) return;
+  collapsedSections.has(id) ? collapsedSections.delete(id) : collapsedSections.add(id);
+  render(forms, els.search.value.trim());
+};
+
 els.forms.addEventListener("click", (e) => {
   if (e.target?.classList?.contains("tree-toggle")) toggleNode(e.target);
+  if (e.target?.classList?.contains("section-toggle")) toggleSection(e.target);
 });
 
 els.forms.addEventListener("keydown", (e) => {
-  if (!e.target?.classList?.contains("tree-toggle")) return;
-  if (e.key !== "Enter" && e.key !== " ") return;
-  e.preventDefault();
-  toggleNode(e.target);
+  if (e.target?.classList?.contains("tree-toggle")) {
+    if (e.key !== "Enter" && e.key !== " ") return;
+    e.preventDefault();
+    toggleNode(e.target);
+  }
+  if (e.target?.classList?.contains("section-toggle")) {
+    if (e.key !== "Enter" && e.key !== " ") return;
+    e.preventDefault();
+    toggleSection(e.target);
+  }
 });
 
 // Initialize on load
